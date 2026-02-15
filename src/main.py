@@ -6,6 +6,7 @@ from src.dsp.pipeline import DSPPipeline
 from src.render.pygame_render import PyGameRenderer
 
 from src.audio.file_source import FileAudioSource
+from src.audio.live_source import LiveAudioSource, list_audio_devices
 
 
 import argparse
@@ -20,14 +21,34 @@ DEFAULT_AUDIO = PROJECT_ROOT / "example_files" / "une-adorable-petite-fille-debo
 def main():
     parser = argparse.ArgumentParser(description="Audio Visualization")
     parser.add_argument("--file", type=str, default=str(DEFAULT_AUDIO), help="Path to audio file (WAV)")
+    parser.add_argument("--live", action="store_true", help="Use live audio input instead of file")
+    parser.add_argument("--device", type=str, default=None, 
+                        help="Audio input device (device ID, name, or 'hw:0,0'). Use --list-devices to see options.")
+    parser.add_argument("--list-devices", action="store_true", help="List available audio input devices and exit")
     args = parser.parse_args()
     
-    audio_path = args.file
-
-    # components
-    # Start with a warning if file doesn't exist, FileAudioSource handles it gracefully by playing silence
-    print(f"Starting visualization for: {audio_path}")
-    audio = FileAudioSource(audio_path)
+    # List devices and exit if requested
+    if args.list_devices:
+        list_audio_devices()
+        return
+    
+    # Determine audio source
+    if args.live:
+        # Live audio capture
+        device = args.device
+        
+        # Convert device to int if it's a number
+        if device is not None and device.isdigit():
+            device = int(device)
+        
+        print(f"Starting live audio visualization...")
+        audio = LiveAudioSource(device=device)
+    else:
+        # File playback
+        audio_path = args.file
+        print(f"Starting file visualization for: {audio_path}")
+        audio = FileAudioSource(audio_path)
+    
     dsp = DSPPipeline()
     renderer = PyGameRenderer()
     
