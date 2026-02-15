@@ -643,10 +643,10 @@ class PyGameRenderer(Renderer):
             channel = random.choice([0, 1])
             if channel == 0:  # Cyan channel
                 # Darker, more saturated cyan for bass
-                color_choice = (0, int(150 + low_energy * 105), int(180 + low_energy * 75))
+                color_choice = (0, int(np.clip(150 + low_energy * 105, 0, 255)), int(np.clip(180 + low_energy * 75, 0, 255)))
             else:  # Magenta channel
                 # Darker, more saturated magenta for bass
-                color_choice = (int(180 + low_energy * 75), 0, int(150 + low_energy * 105))
+                color_choice = (int(np.clip(180 + low_energy * 75, 0, 255)), 0, int(np.clip(150 + low_energy * 105, 0, 255)))
             
             self.particle_system.spawn(center_x, center_y, vx, vy, size, color_choice, lifetime)
         
@@ -681,9 +681,9 @@ class PyGameRenderer(Renderer):
             # Cyan/Magenta base colors with mid-tone brightness
             channel = random.choice([0, 1])
             if channel == 0:  # Cyan channel
-                color_choice = (0, int(200 + mid_energy * 55), int(220 + mid_energy * 35))
+                color_choice = (0, int(np.clip(200 + mid_energy * 55, 0, 255)), int(np.clip(220 + mid_energy * 35, 0, 255)))
             else:  # Magenta channel
-                color_choice = (int(220 + mid_energy * 35), 0, int(200 + mid_energy * 55))
+                color_choice = (int(np.clip(220 + mid_energy * 35, 0, 255)), 0, int(np.clip(200 + mid_energy * 55, 0, 255)))
             
             self.particle_system.spawn(x, y, vx, vy, size, color_choice, lifetime)
         
@@ -718,7 +718,7 @@ class PyGameRenderer(Renderer):
             
             # Bright cyan/magenta sparks
             channel = random.choice([0, 1])
-            brightness = int(200 + high_energy * 55)
+            brightness = int(np.clip(200 + high_energy * 55, 0, 255))
             if channel == 0:  # Bright cyan
                 color_choice = (brightness // 2, 255, 255)
             else:  # Bright magenta
