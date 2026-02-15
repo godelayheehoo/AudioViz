@@ -1,0 +1,6 @@
+numpy
+pygame
+scipy
+pytest
+pyaudio
+sounddevice
