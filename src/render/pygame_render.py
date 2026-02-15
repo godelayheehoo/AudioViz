@@ -225,11 +225,11 @@ class PyGameRenderer(Renderer):
         cmap = np.zeros((256, 3), dtype=np.uint8)
         for i in range(256):
             if i < 85:  # Dark cyan
-                cmap[i] = (0, i * 3, i * 3)
+                cmap[i] = (0, int(np.clip(i * 3, 0, 255)), int(np.clip(i * 3, 0, 255)))
             elif i < 170:  # Cyan
-                cmap[i] = (0, 85*3 + (i-85)*2, 255)
+                cmap[i] = (0, int(np.clip(85*3 + (i-85)*2, 0, 255)), 255)
             else:  # Bright cyan -> white
-                cmap[i] = ((i-170)*3, 255, 255)
+                cmap[i] = (int(np.clip((i-170)*3, 0, 255)), 255, 255)
         return cmap
     
     def _generate_colormap_magenta(self):
@@ -237,11 +237,11 @@ class PyGameRenderer(Renderer):
         cmap = np.zeros((256, 3), dtype=np.uint8)
         for i in range(256):
             if i < 85:  # Dark magenta
-                cmap[i] = (i * 3, 0, i * 3)
+                cmap[i] = (int(np.clip(i * 3, 0, 255)), 0, int(np.clip(i * 3, 0, 255)))
             elif i < 170:  # Magenta
-                cmap[i] = (255, 0, 85*3 + (i-85)*2)
+                cmap[i] = (255, 0, int(np.clip(85*3 + (i-85)*2, 0, 255)))
             else:  # Bright magenta -> white
-                cmap[i] = (255, (i-170)*3, 255)
+                cmap[i] = (255, int(np.clip((i-170)*3, 0, 255)), 255)
         return cmap
     
     def _analyze_frequency_bands(self, spectrum):
