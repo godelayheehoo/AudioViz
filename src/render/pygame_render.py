@@ -5,6 +5,84 @@ from scipy.interpolate import make_interp_spline
 from .base import Renderer
 from .ui import Dropdown
 from ..config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS
+import random
+
+class ParticleSystem:
+    """Efficient particle system using numpy arrays for Raspberry Pi performance."""
+    def __init__(self, max_particles=400):
+        self.max_particles = max_particles
+        # Particle properties stored as numpy arrays for efficiency
+        self.positions = np.zeros((max_particles, 2), dtype=np.float32)  # x, y
+        self.velocities = np.zeros((max_particles, 2), dtype=np.float32)  # vx, vy
+        self.sizes = np.zeros(max_particles, dtype=np.float32)
+        self.colors = np.zeros((max_particles, 3), dtype=np.uint8)  # r, g, b
+        self.lifetimes = np.zeros(max_particles, dtype=np.float32)
+        self.ages = np.zeros(max_particles, dtype=np.float32)
+        self.active = np.zeros(max_particles, dtype=bool)
+        self.particle_count = 0
+    
+    def spawn(self, x, y, vx, vy, size, color, lifetime):
+        """Spawn a new particle if there's room."""
+        # Find first inactive particle
+        inactive_indices = np.where(~self.active)[0]
+        if len(inactive_indices) == 0:
+            return  # No room for new particles
+        
+        idx = inactive_indices[0]
+        self.positions[idx] = [x, y]
+        self.velocities[idx] = [vx, vy]
+        self.sizes[idx] = size
+        self.colors[idx] = color
+        self.lifetimes[idx] = lifetime
+        self.ages[idx] = 0.0
+        self.active[idx] = True
+        self.particle_count += 1
+    
+    def update(self, dt=1/60.0):
+        """Update all active particles."""
+        if self.particle_count == 0:
+            return
+        
+        # Get active particles mask
+        active_mask = self.active
+        
+        # Update positions
+        self.positions[active_mask] += self.velocities[active_mask] * dt
+        
+        # Apply simple drag/friction
+        self.velocities[active_mask] *= 0.98
+        
+        # Update ages
+        self.ages[active_mask] += dt
+        
+        # Kill old particles
+        dead_mask = self.ages >= self.lifetimes
+        newly_dead = active_mask & dead_mask
+        self.active[newly_dead] = False
+        self.particle_count -= np.sum(newly_dead)
+    
+    def draw(self, surface):
+        """Draw all active particles to the surface."""
+        if self.particle_count == 0:
+            return
+        
+        active_mask = self.active
+        active_indices = np.where(active_mask)[0]
+        
+        for idx in active_indices:
+            x, y = self.positions[idx]
+            size = self.sizes[idx]
+            color = tuple(self.colors[idx])
+            
+            # Fade based on age
+            life_ratio = 1.0 - (self.ages[idx] / self.lifetimes[idx])
+            alpha = int(255 * life_ratio)
+            faded_color = tuple(int(c * life_ratio) for c in color)
+            
+            # Draw particle as circle
+            if 0 <= x < WINDOW_WIDTH and 0 <= y < WINDOW_HEIGHT:
+                pygame.draw.circle(surface, faded_color, (int(x), int(y)), max(1, int(size)))
+
 
 class PyGameRenderer(Renderer):
     def __init__(self):
@@ -17,7 +95,7 @@ class PyGameRenderer(Renderer):
         self.mode = 'bars' # 'bars', 'line', 'spectrogram', 'wave'
         
         # Dropdown menu for mode selection
-        dropdown_options = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock"]
+        dropdown_options = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock", "Particle Field"]
         self.mode_map = {
             "Spectrum Bars": "bars",
             "Spectrum Curves": "line",
@@ -25,7 +103,8 @@ class PyGameRenderer(Renderer):
             "Oscilloscope": "wave",
             "Radial Spectrum": "radial",
             "Radial Curves": "radial_curves",
-            "Phase Clock": "phase_clock"
+            "Phase Clock": "phase_clock",
+            "Particle Field": "particles"
         }
         dropdown_width = 200
         dropdown_height = 40
@@ -74,6 +153,12 @@ class PyGameRenderer(Renderer):
         self.waveform_max = 0.1  # Track maximum waveform amplitude (start small)
         self.smoothed_spectrum = None
         self.smoothing_factor = 0.7  # 0.0 = no smoothing, 0.9 = very slow/smooth
+        
+        # Particle system setup
+        self.particle_system = ParticleSystem(max_particles=400)  # Conservative for RPi
+        self.particle_trail_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.particle_trail_surf.fill((0, 0, 0))
+        self.particle_trail_surf.set_alpha(255)
 
     def _on_mode_select(self, idx, option_name):
         """Callback when user selects a mode from dropdown"""
@@ -137,6 +222,24 @@ class PyGameRenderer(Renderer):
             else: # Whitish
                 cmap[i] = ((i-170)*3, 255, 255)
         return cmap
+    
+    def _analyze_frequency_bands(self, spectrum):
+        """
+        Analyze frequency bands and return energy levels.
+        Returns: (low_energy, mid_energy, high_energy) for each channel.
+        """
+        # Average across both channels for simplicity
+        avg_spectrum = np.mean(spectrum, axis=0)
+        
+        # Define frequency bands (bin indices)
+        # Low: 0-20 (~0-430 Hz) - bass
+        # Mid: 21-100 (~430-2150 Hz) - midrange
+        # High: 101-256 (~2150-5500 Hz) - treble
+        low_energy = np.mean(avg_spectrum[0:21])
+        mid_energy = np.mean(avg_spectrum[21:101])
+        high_energy = np.mean(avg_spectrum[101:257])
+        
+        return low_energy, mid_energy, high_energy
 
     def render(self, spectrum: np.ndarray, audio_chunk: np.ndarray = None, phase: np.ndarray = None):
         self.screen.fill((0, 0, 0)) # Clear screen
@@ -166,6 +269,8 @@ class PyGameRenderer(Renderer):
         elif self.mode == 'phase_clock':
             if phase is not None:
                 self._render_phase_clock(spectrum, phase)
+        elif self.mode == 'particles':
+            self._render_particle_field(spectrum)
             
         # Draw dropdowns
         self.scale_dropdown.draw(self.screen)
@@ -499,6 +604,136 @@ class PyGameRenderer(Renderer):
                                thickness)
 
 
+
+    def _render_particle_field(self, spectrum):
+        """
+        Render sound-reactive particle field driven by frequency bands.
+        Low freq = heavy particles, mid freq = turbulence, high freq = sparks.
+        """
+        # Analyze frequency bands
+        low_energy, mid_energy, high_energy = self._analyze_frequency_bands(spectrum)
+        
+        # Apply fade to trail surface for motion persistence
+        # Fill with semi-transparent black to create trailing effect
+        fade_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        fade_surface.fill((0, 0, 0))
+        fade_surface.set_alpha(25)  # Lower = longer trails, higher = faster fade
+        self.particle_trail_surf.blit(fade_surface, (0, 0))
+        
+        # Center of screen for particle emission
+        center_x = WINDOW_WIDTH // 2
+        center_y = WINDOW_HEIGHT // 2
+        
+        # LOW FREQUENCY - Heavy, slow particles (bass)
+        # Spawn rate based on bass energy
+        bass_spawn_count = int(low_energy * 15)  # Scale appropriately
+        for _ in range(bass_spawn_count):
+            # Radial explosion from center
+            angle = random.uniform(0, 2 * np.pi)
+            speed = random.uniform(20, 60) * (1 + low_energy)
+            vx = speed * np.cos(angle)
+            vy = speed * np.sin(angle)
+            
+            # Large, slow particles
+            size = random.uniform(4, 10) * (1 + low_energy * 0.5)
+            lifetime = random.uniform(2.0, 4.0)
+            
+            # Cyan/Magenta base colors with variations
+            # Alternate between channels for stereo effect
+            channel = random.choice([0, 1])
+            if channel == 0:  # Cyan channel
+                # Darker, more saturated cyan for bass
+                color_choice = (0, int(150 + low_energy * 105), int(180 + low_energy * 75))
+            else:  # Magenta channel
+                # Darker, more saturated magenta for bass
+                color_choice = (int(180 + low_energy * 75), 0, int(150 + low_energy * 105))
+            
+            self.particle_system.spawn(center_x, center_y, vx, vy, size, color_choice, lifetime)
+        
+        # MID FREQUENCY - Turbulence and flow
+        # Add turbulence to existing particles
+        if self.particle_system.particle_count > 0:
+            active_mask = self.particle_system.active
+            turbulence_strength = mid_energy * 50
+            
+            # Add random velocity perturbations
+            noise_x = np.random.uniform(-turbulence_strength, turbulence_strength, self.particle_system.max_particles)
+            noise_y = np.random.uniform(-turbulence_strength, turbulence_strength, self.particle_system.max_particles)
+            
+            self.particle_system.velocities[active_mask, 0] += noise_x[active_mask]
+            self.particle_system.velocities[active_mask, 1] += noise_y[active_mask]
+        
+        # Spawn some mid-range particles
+        mid_spawn_count = int(mid_energy * 8)
+        for _ in range(mid_spawn_count):
+            # Random position variation
+            x = center_x + random.uniform(-50, 50)
+            y = center_y + random.uniform(-50, 50)
+            
+            angle = random.uniform(0, 2 * np.pi)
+            speed = random.uniform(40, 100)
+            vx = speed * np.cos(angle)
+            vy = speed * np.sin(angle)
+            
+            size = random.uniform(2, 5)
+            lifetime = random.uniform(1.0, 2.0)
+            
+            # Cyan/Magenta base colors with mid-tone brightness
+            channel = random.choice([0, 1])
+            if channel == 0:  # Cyan channel
+                color_choice = (0, int(200 + mid_energy * 55), int(220 + mid_energy * 35))
+            else:  # Magenta channel
+                color_choice = (int(220 + mid_energy * 35), 0, int(200 + mid_energy * 55))
+            
+            self.particle_system.spawn(x, y, vx, vy, size, color_choice, lifetime)
+        
+        # HIGH FREQUENCY - Fast, bright sparks (treble)
+        spark_spawn_count = int(high_energy * 20)
+        for _ in range(spark_spawn_count):
+            # Emit from random positions or edges
+            if random.random() < 0.5:
+                # From center
+                x, y = center_x, center_y
+            else:
+                # From random edge
+                edge = random.choice(['top', 'bottom', 'left', 'right'])
+                if edge == 'top':
+                    x, y = random.uniform(0, WINDOW_WIDTH), 0
+                elif edge == 'bottom':
+                    x, y = random.uniform(0, WINDOW_WIDTH), WINDOW_HEIGHT
+                elif edge == 'left':
+                    x, y = 0, random.uniform(0, WINDOW_HEIGHT)
+                else:
+                    x, y = WINDOW_WIDTH, random.uniform(0, WINDOW_HEIGHT)
+            
+            # Fast, random direction
+            angle = random.uniform(0, 2 * np.pi)
+            speed = random.uniform(150, 300) * (1 + high_energy)
+            vx = speed * np.cos(angle)
+            vy = speed * np.sin(angle)
+            
+            # Small, short-lived
+            size = random.uniform(1, 3)
+            lifetime = random.uniform(0.2, 0.5)
+            
+            # Bright cyan/magenta sparks
+            channel = random.choice([0, 1])
+            brightness = int(200 + high_energy * 55)
+            if channel == 0:  # Bright cyan
+                color_choice = (brightness // 2, 255, 255)
+            else:  # Bright magenta
+                color_choice = (255, brightness // 2, 255)
+            
+            self.particle_system.spawn(x, y, vx, vy, size, color_choice, lifetime)
+        
+        # Update particle physics
+        self.particle_system.update(dt=1/60.0)
+        
+        # Draw particles to trail surface
+        self.particle_system.draw(self.particle_trail_surf)
+        
+        # Blit trail surface to main screen
+        self.screen.blit(self.particle_trail_surf, (0, 0))
     def _render_waveform(self, audio_chunk):
         # audio_chunk shape (CHUNK_SIZE, 2)
         # We need to stabilize the waveform using a simple zero-crossing trigger on the Left channel
@@ -574,8 +809,8 @@ class PyGameRenderer(Renderer):
             # Optional: Keep spacebar as a keyboard shortcut
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    modes = ['bars', 'line', 'spectrogram', 'wave', 'radial', 'radial_curves', 'phase_clock']
-                    mode_names = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock"]
+                    modes = ['bars', 'line', 'spectrogram', 'wave', 'radial', 'radial_curves', 'phase_clock', 'particles']
+                    mode_names = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock", "Particle Field"]
                     current_idx = modes.index(self.mode)
                     next_idx = (current_idx + 1) % len(modes)
                     self.mode = modes[next_idx]
