@@ -17,14 +17,15 @@ class PyGameRenderer(Renderer):
         self.mode = 'bars' # 'bars', 'line', 'spectrogram', 'wave'
         
         # Dropdown menu for mode selection
-        dropdown_options = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves"]
+        dropdown_options = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock"]
         self.mode_map = {
             "Spectrum Bars": "bars",
             "Spectrum Curves": "line",
             "Spectrogram": "spectrogram",
             "Oscilloscope": "wave",
             "Radial Spectrum": "radial",
-            "Radial Curves": "radial_curves"
+            "Radial Curves": "radial_curves",
+            "Phase Clock": "phase_clock"
         }
         dropdown_width = 200
         dropdown_height = 40
@@ -137,7 +138,7 @@ class PyGameRenderer(Renderer):
                 cmap[i] = ((i-170)*3, 255, 255)
         return cmap
 
-    def render(self, spectrum: np.ndarray, audio_chunk: np.ndarray = None):
+    def render(self, spectrum: np.ndarray, audio_chunk: np.ndarray = None, phase: np.ndarray = None):
         self.screen.fill((0, 0, 0)) # Clear screen
         
         if spectrum is None or len(spectrum) == 0:
@@ -162,6 +163,9 @@ class PyGameRenderer(Renderer):
             self._render_radial(spectrum)
         elif self.mode == 'radial_curves':
             self._render_radial_curves(spectrum)
+        elif self.mode == 'phase_clock':
+            if phase is not None:
+                self._render_phase_clock(spectrum, phase)
             
         # Draw dropdowns
         self.scale_dropdown.draw(self.screen)
@@ -412,6 +416,88 @@ class PyGameRenderer(Renderer):
                 points = list(zip(x.astype(int), y.astype(int)))
                 if len(points) > 1:
                     pygame.draw.lines(self.screen, colors[ch], True, points, 2)
+    
+    def _render_phase_clock(self, spectrum, phase):
+        """
+        Render a radial "phase clock" where each frequency bin is a rotating vector.
+        Vector length = magnitude, rotation angle = instantaneous phase.
+        Creates a chaotic mechanical clock effect.
+        """
+        # Spectrum and phase shapes are (2, N)
+        num_channels = spectrum.shape[0]
+        
+        # Use a reasonable number of bins for visual clarity
+        # Too many = cluttered, too few = not enough detail
+        num_bins = 80  # Sweet spot for clock-like appearance
+        limit = min(spectrum.shape[1] // 4, num_bins * 2)  # Use lower frequencies primarily
+        
+        # Center of screen
+        center_x = WINDOW_WIDTH // 2
+        center_y = WINDOW_HEIGHT // 2
+        
+        # Maximum vector length
+        max_length = min(WINDOW_WIDTH, WINDOW_HEIGHT) // 2 - 30
+        
+        # Draw a subtle center circle as anchor
+        pygame.draw.circle(self.screen, (40, 40, 40), (center_x, center_y), 5, 0)
+        
+        # Colors for channels
+        base_colors = [(0, 255, 255), (255, 0, 255)]  # Cyan, Magenta
+        
+        # Process each channel
+        for ch in range(num_channels):
+            mag_data = spectrum[ch][:limit]
+            phase_data = phase[ch][:limit]
+            
+            # Sample bins evenly
+            indices = np.linspace(0, len(mag_data) - 1, num_bins).astype(int)
+            magnitudes = mag_data[indices]
+            phases = phase_data[indices]
+            
+            # Draw each bin as a rotating vector
+            for i in range(num_bins):
+                # Position angle around the circle (like clock tick marks)
+                position_angle = (2 * np.pi * i) / num_bins
+                
+                # Add slight offset between channels for visibility
+                if ch == 1:
+                    position_angle += (np.pi / num_bins)  # Half-step offset
+                
+                # Vector length based on magnitude
+                length = magnitudes[i] * max_length * 0.8
+                
+                # Rotation angle based on phase
+                # Phase is in radians (-π to π), use it directly for rotation
+                rotation = phases[i]
+                
+                # Combined angle: position + rotation from phase
+                total_angle = position_angle + rotation
+                
+                # Calculate end point of vector
+                end_x = center_x + length * np.cos(total_angle)
+                end_y = center_y + length * np.sin(total_angle)
+                
+                # Color variation based on frequency (bin index)
+                # Low frequencies (early bins) = warmer/dimmer
+                # High frequencies (later bins) = cooler/brighter
+                freq_factor = i / num_bins
+                
+                # Brightness based on magnitude
+                brightness = min(1.0, magnitudes[i] * 2.0)
+                
+                # Interpolate color: low freq = dim, high freq = bright
+                base_color = base_colors[ch]
+                color = tuple(int(c * (0.3 + 0.7 * freq_factor) * (0.4 + 0.6 * brightness)) for c in base_color)
+                
+                # Line thickness varies slightly with magnitude for depth
+                thickness = max(1, int(1 + brightness * 2))
+                
+                # Draw the vector from center to end point
+                pygame.draw.line(self.screen, color,
+                               (int(center_x), int(center_y)),
+                               (int(end_x), int(end_y)),
+                               thickness)
+
 
     def _render_waveform(self, audio_chunk):
         # audio_chunk shape (CHUNK_SIZE, 2)
@@ -488,8 +574,8 @@ class PyGameRenderer(Renderer):
             # Optional: Keep spacebar as a keyboard shortcut
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    modes = ['bars', 'line', 'spectrogram', 'wave', 'radial', 'radial_curves']
-                    mode_names = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves"]
+                    modes = ['bars', 'line', 'spectrogram', 'wave', 'radial', 'radial_curves', 'phase_clock']
+                    mode_names = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock"]
                     current_idx = modes.index(self.mode)
                     next_idx = (current_idx + 1) % len(modes)
                     self.mode = modes[next_idx]

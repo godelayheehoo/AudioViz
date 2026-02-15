@@ -9,7 +9,7 @@ class DSPPipeline:
     def __init__(self):
         self.window = np.hanning(FFT_SIZE)
         
-    def process(self, audio_chunk: np.ndarray) -> np.ndarray:
+    def process(self, audio_chunk: np.ndarray) -> tuple:
         """
         Compute the FFT of the audio chunk for both channels.
         
@@ -17,7 +17,9 @@ class DSPPipeline:
             audio_chunk (np.ndarray): Input audio data (N, 2).
             
         Returns:
-            np.ndarray: Frequency spectrum magnitude (2, N/2 + 1).
+            tuple: (magnitude, phase) where:
+                - magnitude (np.ndarray): Frequency spectrum magnitude (2, N/2 + 1)
+                - phase (np.ndarray): Frequency spectrum phase (2, N/2 + 1)
         """
         # Ensure we have enough data, pad if necessary
         if len(audio_chunk) < FFT_SIZE:
@@ -27,14 +29,22 @@ class DSPPipeline:
         # Process each channel
         # Channel 0 (Left)
         left_data = audio_chunk[:FFT_SIZE, 0] * self.window
-        left_spectrum = np.abs(np.fft.rfft(left_data))
+        left_fft = np.fft.rfft(left_data)
+        left_spectrum = np.abs(left_fft)
+        left_phase = np.angle(left_fft)
         
         # Channel 1 (Right)
         if audio_chunk.shape[1] > 1:
             right_data = audio_chunk[:FFT_SIZE, 1] * self.window
-            right_spectrum = np.abs(np.fft.rfft(right_data))
+            right_fft = np.fft.rfft(right_data)
+            right_spectrum = np.abs(right_fft)
+            right_phase = np.angle(right_fft)
         else:
             # Duplicate mono if only 1 channel
             right_spectrum = left_spectrum
+            right_phase = left_phase
 
-        return np.vstack((left_spectrum, right_spectrum))
+        magnitude = np.vstack((left_spectrum, right_spectrum))
+        phase = np.vstack((left_phase, right_phase))
+        
+        return magnitude, phase

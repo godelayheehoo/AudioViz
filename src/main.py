@@ -60,10 +60,10 @@ def main():
             data = audio.read_chunk()
             
             # 2. Process
-            spectrum = dsp.process(data)
+            magnitude, phase = dsp.process(data)
             
             # 3. Render
-            renderer.render(spectrum, data)
+            renderer.render(magnitude, data, phase)
             renderer.update()
             
     except KeyboardInterrupt:
