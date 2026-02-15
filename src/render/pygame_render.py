@@ -6,6 +6,7 @@ from .base import Renderer
 from .ui import Dropdown
 from ..config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS
 import random
+from collections import deque
 
 class ParticleSystem:
     """Efficient particle system using numpy arrays for Raspberry Pi performance."""
@@ -95,7 +96,7 @@ class PyGameRenderer(Renderer):
         self.mode = 'bars' # 'bars', 'line', 'spectrogram', 'wave'
         
         # Dropdown menu for mode selection
-        dropdown_options = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock", "Particle Field"]
+        dropdown_options = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock", "Particle Field", "Spectral Terrain"]
         self.mode_map = {
             "Spectrum Bars": "bars",
             "Spectrum Curves": "line",
@@ -104,7 +105,8 @@ class PyGameRenderer(Renderer):
             "Radial Spectrum": "radial",
             "Radial Curves": "radial_curves",
             "Phase Clock": "phase_clock",
-            "Particle Field": "particles"
+            "Particle Field": "particles",
+            "Spectral Terrain": "terrain"
         }
         dropdown_width = 200
         dropdown_height = 40
@@ -159,6 +161,11 @@ class PyGameRenderer(Renderer):
         self.particle_trail_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.particle_trail_surf.fill((0, 0, 0))
         self.particle_trail_surf.set_alpha(255)
+        
+        # Spectral terrain setup
+        self.terrain_history_left = deque(maxlen=40)  # Store last 40 FFT frames
+        self.terrain_history_right = deque(maxlen=40)
+        self.terrain_num_bins = 60  # Number of frequency bins to display
 
     def _on_mode_select(self, idx, option_name):
         """Callback when user selects a mode from dropdown"""
@@ -240,6 +247,24 @@ class PyGameRenderer(Renderer):
         high_energy = np.mean(avg_spectrum[101:257])
         
         return low_energy, mid_energy, high_energy
+    
+    def _project_3d_to_2d(self, x, y, z, center_x, center_y, scale=1.0, camera_distance=300):
+        """
+        Simple perspective projection from 3D to 2D.
+        Args:
+            x, y, z: 3D coordinates
+            center_x, center_y: Screen center
+            scale: Scaling factor
+            camera_distance: Distance from camera (affects perspective)
+        Returns:
+            (screen_x, screen_y)
+        """
+        # Simple perspective projection
+        # The farther away (larger z), the smaller the object appears
+        factor = camera_distance / (camera_distance + z)
+        screen_x = center_x + (x * scale * factor)
+        screen_y = center_y - (y * scale * factor)  # Negative because screen Y increases downward
+        return int(screen_x), int(screen_y)
 
     def render(self, spectrum: np.ndarray, audio_chunk: np.ndarray = None, phase: np.ndarray = None):
         self.screen.fill((0, 0, 0)) # Clear screen
@@ -271,6 +296,8 @@ class PyGameRenderer(Renderer):
                 self._render_phase_clock(spectrum, phase)
         elif self.mode == 'particles':
             self._render_particle_field(spectrum)
+        elif self.mode == 'terrain':
+            self._render_spectral_terrain(spectrum)
             
         # Draw dropdowns
         self.scale_dropdown.draw(self.screen)
@@ -734,6 +761,94 @@ class PyGameRenderer(Renderer):
         
         # Blit trail surface to main screen
         self.screen.blit(self.particle_trail_surf, (0, 0))
+    
+    def _render_spectral_terrain(self, spectrum):
+        """
+        Render stereo spectral terrain as 3D wireframe landscapes.
+        Frequency = X axis, Amplitude = Y axis, Time = Z axis (depth).
+        """
+        # Update terrain history buffers
+        left_data = spectrum[0][:self.terrain_num_bins]
+        right_data = spectrum[1][:self.terrain_num_bins]
+        
+        self.terrain_history_left.append(left_data.copy())
+        self.terrain_history_right.append(right_data.copy())
+        
+        # Need at least 2 frames to draw terrain
+        if len(self.terrain_history_left) < 2:
+            return
+        
+        # Rendering parameters
+        half_width = WINDOW_WIDTH // 2
+        
+        # Side-by-side layout
+        # Left channel: left half, Right channel: right half
+        channels_data = [
+            (self.terrain_history_left, 0, half_width, (0, 255, 255)),  # Cyan
+            (self.terrain_history_right, half_width, WINDOW_WIDTH, (255, 0, 255))  # Magenta
+        ]
+        
+        for history, x_start, x_end, base_color in channels_data:
+            center_x = (x_start + x_end) // 2
+            center_y = WINDOW_HEIGHT // 2
+            
+            # Convert history deque to numpy array for easier manipulation
+            terrain_data = np.array(list(history))  # Shape: (depth, num_bins)
+            depth = len(terrain_data)
+            
+            # Scale factors
+            x_scale = (x_end - x_start) / (self.terrain_num_bins + 1)
+            y_scale = 150  # Amplitude scaling
+            z_scale = 8    # Depth scaling
+            
+            # Draw wireframe
+            # Draw horizontal lines (connecting frequency bins at same time/depth)
+            for z_idx in range(depth):
+                z = z_idx * z_scale
+                
+                # Brightness based on depth (farther = dimmer)
+                depth_factor = 1.0 - (z_idx / depth) * 0.7
+                color = tuple(int(c * depth_factor) for c in base_color)
+                
+                points = []
+                for x_idx in range(self.terrain_num_bins):
+                    x = (x_idx - self.terrain_num_bins // 2) * x_scale
+                    y = terrain_data[z_idx][x_idx] * y_scale
+                    
+                    screen_x, screen_y = self._project_3d_to_2d(x, y, z, center_x, center_y, scale=1.0)
+                    points.append((screen_x, screen_y))
+                
+                # Draw line connecting all points at this depth
+                if len(points) > 1:
+                    try:
+                        pygame.draw.lines(self.screen, color, False, points, 1)
+                    except:
+                        pass  # Skip if points are out of bounds
+            
+            # Draw vertical lines (connecting same frequency across time/depth)
+            # Draw fewer vertical lines for performance
+            for x_idx in range(0, self.terrain_num_bins, 3):  # Every 3rd bin
+                points = []
+                for z_idx in range(depth):
+                    z = z_idx * z_scale
+                    x = (x_idx - self.terrain_num_bins // 2) * x_scale
+                    y = terrain_data[z_idx][x_idx] * y_scale
+                    
+                    screen_x, screen_y = self._project_3d_to_2d(x, y, z, center_x, center_y, scale=1.0)
+                    points.append((screen_x, screen_y))
+                
+                # Draw line connecting all points for this frequency
+                if len(points) > 1:
+                    # Use dimmer color for vertical lines
+                    vert_color = tuple(int(c * 0.5) for c in base_color)
+                    try:
+                        pygame.draw.lines(self.screen, vert_color, False, points, 1)
+                    except:
+                        pass  # Skip if points are out of bounds
+        
+        # Draw center separator line
+        pygame.draw.line(self.screen, (50, 50, 50), (half_width, 0), (half_width, WINDOW_HEIGHT), 1)
+
     def _render_waveform(self, audio_chunk):
         # audio_chunk shape (CHUNK_SIZE, 2)
         # We need to stabilize the waveform using a simple zero-crossing trigger on the Left channel
@@ -809,8 +924,8 @@ class PyGameRenderer(Renderer):
             # Optional: Keep spacebar as a keyboard shortcut
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    modes = ['bars', 'line', 'spectrogram', 'wave', 'radial', 'radial_curves', 'phase_clock', 'particles']
-                    mode_names = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock", "Particle Field"]
+                    modes = ['bars', 'line', 'spectrogram', 'wave', 'radial', 'radial_curves', 'phase_clock', 'particles', 'terrain']
+                    mode_names = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock", "Particle Field", "Spectral Terrain"]
                     current_idx = modes.index(self.mode)
                     next_idx = (current_idx + 1) % len(modes)
                     self.mode = modes[next_idx]
