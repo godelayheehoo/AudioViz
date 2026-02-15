@@ -146,8 +146,9 @@ class PyGameRenderer(Renderer):
         # Spectrogram setup
         self.spectrogram_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.spectrogram_surf.fill((0, 0, 0))
-        # Precompute simple colormap (Black -> Blue -> Cyan -> White)
-        self.colormap = self._generate_colormap()
+        # Precompute colormaps for stereo channels
+        self.colormap_left = self._generate_colormap_cyan()   # Cyan for left
+        self.colormap_right = self._generate_colormap_magenta()  # Magenta for right
         
         # Adaptive normalization & Smoothing
         self.running_max = 1.0  # Track maximum spectrum value
@@ -218,16 +219,29 @@ class PyGameRenderer(Renderer):
                                 (1 - self.smoothing_factor) * spectrum)
         return self.smoothed_spectrum
     
-    def _generate_colormap(self):
-        # 256 colors
+    
+    def _generate_colormap_cyan(self):
+        """Generate cyan colormap: Black -> Dark Cyan -> Cyan -> Bright Cyan"""
         cmap = np.zeros((256, 3), dtype=np.uint8)
         for i in range(256):
-            if i < 85: # Blueish
-                cmap[i] = (0, 0, i * 3)
-            elif i < 170: # Cyanish
-                cmap[i] = (0, (i-85)*3, 255)
-            else: # Whitish
+            if i < 85:  # Dark cyan
+                cmap[i] = (0, i * 3, i * 3)
+            elif i < 170:  # Cyan
+                cmap[i] = (0, 85*3 + (i-85)*2, 255)
+            else:  # Bright cyan -> white
                 cmap[i] = ((i-170)*3, 255, 255)
+        return cmap
+    
+    def _generate_colormap_magenta(self):
+        """Generate magenta colormap: Black -> Dark Magenta -> Magenta -> Bright Magenta"""
+        cmap = np.zeros((256, 3), dtype=np.uint8)
+        for i in range(256):
+            if i < 85:  # Dark magenta
+                cmap[i] = (i * 3, 0, i * 3)
+            elif i < 170:  # Magenta
+                cmap[i] = (255, 0, 85*3 + (i-85)*2)
+            else:  # Bright magenta -> white
+                cmap[i] = (255, (i-170)*3, 255)
         return cmap
     
     def _analyze_frequency_bands(self, spectrum):
@@ -248,22 +262,33 @@ class PyGameRenderer(Renderer):
         
         return low_energy, mid_energy, high_energy
     
-    def _project_3d_to_2d(self, x, y, z, center_x, center_y, scale=1.0, camera_distance=300):
+    def _project_3d_to_2d(self, x, y, z, center_x, center_y, scale=1.0, camera_distance=300, tilt_angle=30):
         """
-        Simple perspective projection from 3D to 2D.
+        Simple perspective projection from 3D to 2D with camera tilt.
         Args:
             x, y, z: 3D coordinates
             center_x, center_y: Screen center
             scale: Scaling factor
             camera_distance: Distance from camera (affects perspective)
+            tilt_angle: Camera tilt angle in degrees (positive = looking down)
         Returns:
             (screen_x, screen_y)
         """
+        # Apply rotation around X-axis to tilt the view downward
+        # This gives a bird's-eye perspective
+        angle_rad = np.radians(tilt_angle)
+        cos_a = np.cos(angle_rad)
+        sin_a = np.sin(angle_rad)
+        
+        # Rotate Y and Z coordinates
+        y_rot = y * cos_a - z * sin_a
+        z_rot = y * sin_a + z * cos_a
+        
         # Simple perspective projection
         # The farther away (larger z), the smaller the object appears
-        factor = camera_distance / (camera_distance + z)
+        factor = camera_distance / (camera_distance + z_rot)
         screen_x = center_x + (x * scale * factor)
-        screen_y = center_y - (y * scale * factor)  # Negative because screen Y increases downward
+        screen_y = center_y - (y_rot * scale * factor)  # Negative because screen Y increases downward
         return int(screen_x), int(screen_y)
 
     def render(self, spectrum: np.ndarray, audio_chunk: np.ndarray = None, phase: np.ndarray = None):
@@ -332,11 +357,12 @@ class PyGameRenderer(Renderer):
             row_data = (row_data + 3) / 4 # Approximate normalization range [-3, 1] to [0, 1]
             row_data = np.clip(row_data * 255, 0, 255).astype(int)
             
-            # Convert to colors using colormap
+            # Convert to colors using channel-specific colormap
             # Creating a surface for this thin line (1px high)
             # Efficient way: create a buffer of pixels
             
-            colors = self.colormap[row_data] # shape (half_width, 3)
+            colormap = self.colormap_left if ch == 0 else self.colormap_right
+            colors = colormap[row_data]  # shape (half_width, 3)
             # Fix broadcasting error: reshape to (width, height, 3)
             colors = colors.reshape(-1, 1, 3)
             
@@ -793,7 +819,8 @@ class PyGameRenderer(Renderer):
             center_y = WINDOW_HEIGHT // 2
             
             # Convert history deque to numpy array for easier manipulation
-            terrain_data = np.array(list(history))  # Shape: (depth, num_bins)
+            # Reverse so newest data is farthest away (scrolls toward viewer)
+            terrain_data = np.array(list(history))[::-1]  # Shape: (depth, num_bins)
             depth = len(terrain_data)
             
             # Scale factors
