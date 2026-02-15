@@ -221,27 +221,49 @@ class PyGameRenderer(Renderer):
     
     
     def _generate_colormap_cyan(self):
-        """Generate cyan colormap: Black -> Dark Cyan -> Cyan -> Bright Cyan"""
+        """Generate cyan colormap: Deep Blue -> Cyan -> Bright Cyan -> White"""
         cmap = np.zeros((256, 3), dtype=np.uint8)
         for i in range(256):
-            if i < 85:  # Dark cyan
-                cmap[i] = (0, int(np.clip(i * 3, 0, 255)), int(np.clip(i * 3, 0, 255)))
-            elif i < 170:  # Cyan
-                cmap[i] = (0, int(np.clip(85*3 + (i-85)*2, 0, 255)), 255)
-            else:  # Bright cyan -> white
-                cmap[i] = (int(np.clip((i-170)*3, 0, 255)), 255, 255)
+            if i < 85:  # Deep blue to cyan
+                # Start with deep blue (0, 0, 128) and transition to cyan
+                r = 0
+                g = int(i * 3.0)  # 0 to 255
+                b = int(128 + i * 1.5)  # 128 to 255
+                cmap[i] = (r, int(np.clip(g, 0, 255)), int(np.clip(b, 0, 255)))
+            elif i < 170:  # Cyan to bright cyan
+                r = 0
+                g = 255
+                b = 255
+                cmap[i] = (r, g, b)
+            else:  # Bright cyan to white
+                fade = (i - 170) / 85.0
+                r = int(fade * 255)
+                g = 255
+                b = 255
+                cmap[i] = (int(np.clip(r, 0, 255)), g, b)
         return cmap
     
     def _generate_colormap_magenta(self):
-        """Generate magenta colormap: Black -> Dark Magenta -> Magenta -> Bright Magenta"""
+        """Generate magenta colormap: Deep Purple -> Magenta -> Bright Magenta -> White"""
         cmap = np.zeros((256, 3), dtype=np.uint8)
         for i in range(256):
-            if i < 85:  # Dark magenta
-                cmap[i] = (int(np.clip(i * 3, 0, 255)), 0, int(np.clip(i * 3, 0, 255)))
-            elif i < 170:  # Magenta
-                cmap[i] = (255, 0, int(np.clip(85*3 + (i-85)*2, 0, 255)))
-            else:  # Bright magenta -> white
-                cmap[i] = (255, int(np.clip((i-170)*3, 0, 255)), 255)
+            if i < 85:  # Deep purple to magenta
+                # Start with deeper purple (64, 0, 96) and transition to magenta
+                r = int(64 + i * 2.25)  # 64 to 255
+                g = 0
+                b = int(96 + i * 1.87)  # 96 to 255
+                cmap[i] = (int(np.clip(r, 0, 255)), g, int(np.clip(b, 0, 255)))
+            elif i < 170:  # Magenta - make it brighter
+                r = 255
+                g = int((i - 85) * 1.5)  # 0 to ~127 for a bit of brightness
+                b = 255
+                cmap[i] = (r, int(np.clip(g, 0, 255)), b)
+            else:  # Bright magenta to white
+                fade = (i - 170) / 85.0
+                r = 255
+                g = int(127 + fade * 128)  # Continue from 127 to 255
+                b = 255
+                cmap[i] = (r, int(np.clip(g, 0, 255)), b)
         return cmap
     
     def _analyze_frequency_bands(self, spectrum):

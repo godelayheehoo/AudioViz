@@ -34,13 +34,15 @@ Complete instructions for setting up the audio visualization project on a Raspbe
 Connect the PCM1808 to your Pi's GPIO header as follows:
 
 | PCM1808 Pin | Function | Pi Zero 2 WH GPIO | Physical Pin |
-|-------------|----------|-------------------|--------------|
+|-------------|----------|-------------------|-----------------|
 | BCK         | Bit Clock | GPIO 18 (PCM_CLK) | Pin 12 |
-| LRCK        | LR Clock (Word Select) | GPIO 19 (PCM_FS) | Pin 35 |
-| DATA/DOUT   | Data Out | GPIO 20 (PCM_DIN) | Pin 38 |
+| LRCK / LRC  | LR Clock (Word Select) | GPIO 19 (PCM_FS) | Pin 35 |
+| DATA/DOUT/OUT | Data Out | GPIO 20 (PCM_DIN) | Pin 38 |
 | SCK         | System Clock | GPIO 4 (GPCLK0) | Pin 7 |
-| VDD         | Power (3.3V) | 3.3V | Pin 1 or 17 |
+| VDD / 3.3   | Power (3.3V) | 3.3V | Pin 1 or 17 |
 | GND         | Ground | GND | Pin 6, 9, 14, 20, 25, 30, 34, or 39 |
+
+> **Note:** Some PCM1808 modules have additional pins (FMY, MDI, MDO, +5V) for format/mode configuration. For basic I2S operation, you typically only need to connect the pins listed above. Leave FMY, MDI, and MDO unconnected unless your specific module documentation requires otherwise.
 
 ### Audio Input Connections
 
@@ -50,7 +52,7 @@ Connect your audio source to the PCM1808:
 
 ### Important Notes
 
-- The PCM1808 requires a master clock (MCLK). We'll use GPIO 4 to generate this.
+- The PCM1808 requires a master clock (MCLK). We'll use GPIO 4 to generate this. (This may not be the case, try without first.s)
 - Ensure all ground connections are solid to minimize noise.
 - Use short wires for I2S signals to reduce interference.
 
@@ -83,7 +85,7 @@ sudo apt upgrade -y
 
 Edit the boot configuration:
 ```bash
-sudo nano /boot/config.txt
+sudo nano /boot/firmware/config.txt
 ```
 
 Add/modify these lines:
@@ -234,32 +236,32 @@ pcm.capture {
         pcm "hw:0,0"
         rate 48000
         channels 2
-        format S24_LE
+        format S32_LE
     }
 }
 ```
 
-### 3. Set Recording Levels
+### 3. PCM1808 Has No Mixer Controls
 
-```bash
-alsamixer
-```
-
-- Press F4 to view capture devices
-- Use arrow keys to adjust levels
-- Press Esc to exit
-
-Or set via command line:
-```bash
-amixer -c 0 sset 'Capture' 80%
-```
+> **Important:** The PCM1808 is a simple ADC with **no software-controllable mixer controls**. This is normal behavior.
+> 
+> - Running `alsamixer` will show "This sound device does not have any controls"
+> - Running `amixer` commands will fail with "Unable to find simple control"
+> - **This is expected and not an error!**
+> 
+> The PCM1808's input gain is controlled by hardware (resistors on the board). If you need to adjust levels:
+> - Adjust the output level of your audio source
+> - Some PCM1808 modules have physical jumpers or trimpots for gain adjustment
+> - Check your specific module's documentation for hardware gain controls
 
 ### 4. Test Audio Capture
 
 Record a 5-second test:
 ```bash
-arecord -D hw:0,0 -f S24_LE -r 48000 -c 2 -d 5 test.wav
+arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
 ```
+
+> **Note:** The PCM1808 on Raspberry Pi uses S32_LE format (24-bit audio in 32-bit containers), not S24_LE.
 
 Play it back (you'll need audio output configured or copy to another device):
 ```bash
@@ -421,11 +423,28 @@ Then connect via VNC client and run normally.
 
 ### 3. Run the Visualizer
 
+⚠️ **Important:** The Pi Zero 2 has limited RAM (512MB). **Use live audio** instead of file playback to avoid memory issues.
+
+**Recommended: Use the helper script**
+```bash
+cd ~/audio_viz
+chmod +x run_pi.sh
+./run_pi.sh
+```
+
+**Or run manually:**
 ```bash
 cd ~/audio_viz
 source venv/bin/activate
-python3 src/main.py
+export SDL_VIDEODRIVER=fbcon
+export SDL_FBDEV=/dev/fb0
+python -m src.main --live --device hw:0,0
 ```
+
+> **Note:** Always use `python -m src.main` (not `python src/main.py`) to ensure proper module imports.
+
+See `PI_QUICKSTART.md` for more options and troubleshooting.
+
 
 ### 4. Auto-Start on Boot (Optional)
 
@@ -489,8 +508,8 @@ dmesg | grep -i 'i2s\|sound\|audio'
 ### Audio Input Not Working
 
 ```bash
-# Test with explicit device
-arecord -D plughw:0,0 -f cd -d 5 test.wav
+# Test with explicit device and correct format
+arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
 
 # Check ALSA configuration
 cat /proc/asound/cards
@@ -611,7 +630,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 4. Test audio
-arecord -D hw:0,0 -f S24_LE -r 48000 -c 2 -d 5 test.wav
+arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
 
 # 5. Run visualizer
 export SDL_VIDEODRIVER=fbcon
