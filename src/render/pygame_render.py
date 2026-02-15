@@ -36,6 +36,29 @@ class PyGameRenderer(Renderer):
             callback=self._on_mode_select
         )
         
+        # Scale control dropdown (top left)
+        scale_options = ["Automatic", "0.5x", "1x", "2x", "5x", "10x"]
+        self.scale_values = {
+            "Automatic": None,  # None means use adaptive normalization
+            "0.5x": 0.5,
+            "1x": 1.0,
+            "2x": 2.0,
+            "5x": 5.0,
+            "10x": 10.0
+        }
+        scale_dropdown_width = 150
+        scale_dropdown_height = 40
+        scale_dropdown_x = 10
+        scale_dropdown_y = 10
+        self.scale_dropdown = Dropdown(
+            scale_dropdown_x, scale_dropdown_y, scale_dropdown_width, scale_dropdown_height,
+            scale_options,
+            self.font,
+            selected_idx=0,  # Default to Automatic
+            callback=self._on_scale_select
+        )
+        self.scale_multiplier = None  # None = automatic
+        
         # Spectrogram setup
         self.spectrogram_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.spectrogram_surf.fill((0, 0, 0))
@@ -51,11 +74,20 @@ class PyGameRenderer(Renderer):
         """Callback when user selects a mode from dropdown"""
         self.mode = self.mode_map[option_name]
     
+    def _on_scale_select(self, idx, option_name):
+        """Callback when user selects a scale from dropdown"""
+        self.scale_multiplier = self.scale_values[option_name]
+    
     def _normalize_spectrum(self, spectrum: np.ndarray) -> np.ndarray:
         """
-        Adaptively normalize spectrum based on running maximum.
-        This ensures bars scale nicely regardless of audio file amplitude.
+        Adaptively normalize spectrum based on running maximum,
+        or use manual scale if set.
         """
+        # If manual scale is set, use it instead of automatic
+        if self.scale_multiplier is not None:
+            return spectrum * self.scale_multiplier
+        
+        # Otherwise use automatic normalization
         # Get current max
         current_max = np.max(spectrum)
         
@@ -104,7 +136,8 @@ class PyGameRenderer(Renderer):
             if audio_chunk is not None:
                 self._render_waveform(audio_chunk)
             
-        # Draw dropdown menu
+        # Draw dropdowns
+        self.scale_dropdown.draw(self.screen)
         self.dropdown.draw(self.screen)
         
         pygame.display.flip()
@@ -238,16 +271,23 @@ class PyGameRenderer(Renderer):
         
         colors = [(0, 255, 255), (255, 0, 255)]
         
-        # Track max amplitude for adaptive scaling
-        current_amp_max = np.max(np.abs(audio_chunk[trigger_idx : trigger_idx + draw_len, :]))
-        if current_amp_max > self.waveform_max:
-            self.waveform_max = current_amp_max
+        # Determine scaling
+        if self.scale_multiplier is not None:
+            # Manual scaling: use fixed scale factor
+            # For waveform, data is -1 to 1, so multiply by screen fraction
+            scale = (WINDOW_HEIGHT / 2) * 0.8 * self.scale_multiplier
         else:
-            self.waveform_max *= self.max_decay
-            self.waveform_max = max(self.waveform_max, current_amp_max * 0.5, 0.01)
-        
-        # Scale factor - use more of the screen height
-        scale = (WINDOW_HEIGHT / 2) * 0.8 / max(self.waveform_max, 0.01)
+            # Adaptive scaling
+            # Track max amplitude for adaptive scaling
+            current_amp_max = np.max(np.abs(audio_chunk[trigger_idx : trigger_idx + draw_len, :]))
+            if current_amp_max > self.waveform_max:
+                self.waveform_max = current_amp_max
+            else:
+                self.waveform_max *= self.max_decay
+                self.waveform_max = max(self.waveform_max, current_amp_max * 0.5, 0.01)
+            
+            # Scale factor - use more of the screen height
+            scale = (WINDOW_HEIGHT / 2) * 0.8 / max(self.waveform_max, 0.01)
         
         for ch in range(2):
             data = audio_chunk[trigger_idx : trigger_idx + draw_len, ch]
@@ -275,8 +315,9 @@ class PyGameRenderer(Renderer):
             if event.type == pygame.QUIT:
                 self.running = False
             
-            # Pass events to dropdown
+            # Pass events to dropdowns
             self.dropdown.handle_event(event)
+            self.scale_dropdown.handle_event(event)
             
             # Optional: Keep spacebar as a keyboard shortcut
             if event.type == pygame.KEYDOWN:
