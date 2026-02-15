@@ -542,6 +542,32 @@ sd.default.device = 'hw:0,0'
 
 ---
 
+## Touchscreen Setup
+
+Most modern touchscreens for the Raspberry Pi (USB, DSI, or HDMI) will "just work" like a mouse on the desktop. However, for a dedicated visualizer, you'll likely want to run it without the desktop (framebuffer mode) to save CPU.
+
+### 1. Hardware Connection
+- **USB Touchscreens**: Connect the touch USB cable to the Pi's micro-USB data port.
+- **DSI Screens**: Connect via ribbon cable.
+- **HDMI Screens**: Connect HDMI for video AND the USB cable for the touch data.
+
+### 2. Pygame & Touch Events
+Pygame automatically translates touch events into mouse events. Your existing mouse-click logic in the `Dropdown` class will work without modification.
+
+### 3. Running Headless (Framebuffer)
+If you are running without a desktop (using `SDL_VIDEODRIVER=fbcon`), you might need to tell Pygame where to look for input:
+
+```bash
+# Set these environment variables before running
+export SDL_MOUSEDRV=TSLIB
+export SDL_MOUSEDEV=/dev/input/event0  # Verify with: ls /dev/input/
+```
+
+### 4. Hide Mouse Cursor
+For a clean "kiosk" look, you can hide the cursor in `src/render/pygame_render.py` by adding `pygame.mouse.set_visible(False)` in `__init__`.
+
+---
+
 ## Performance Tips
 
 1. **Use 48kHz sample rate** - Well supported and good balance
