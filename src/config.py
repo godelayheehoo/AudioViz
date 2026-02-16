@@ -3,7 +3,7 @@ Configuration constants for the Audio Visualization project.
 """
 
 # Audio Settings
-SAMPLE_RATE = 44100
+SAMPLE_RATE = 48000  # PCM1808 runs at 48kHz
 CHUNK_SIZE = 1024  # Number of audio frames per buffer
 CHANNELS = 2       # Stereo input
 
