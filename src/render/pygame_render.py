@@ -95,8 +95,8 @@ class PyGameRenderer(Renderer):
         self.running = True
         
         # Two-level mode tracking: base_mode (category) and sub_mode (variant)
-        self.base_mode = 'spectrum'  # spectrum, radial, spectrogram, wave, phase_clock, particles, terrain
-        self.sub_mode = 'bars'  # bars, curves, or None
+        self.base_mode = 'spectrum'  # spectrum, radial, wave, spectrogram, phase_clock, particles, terrain
+        self.sub_mode = 'bars'  # bars, curves, stream, cycle, or None
         self.mode = 'bars'  # Computed from base_mode + sub_mode for backward compatibility
         
         # Dropdown menu for mode selection (consolidated)
@@ -179,6 +179,10 @@ class PyGameRenderer(Renderer):
             toggle_x, toggle_y, toggle_radius,
             self.font, current_mode='bars', callback=self._on_toggle_click
         )
+        
+        # Track number of cycles to display in cycle-locked mode
+        self.cycle_history = []  # Store recent cycles for overlay
+        self.max_cycle_history = 5
 
     def _on_mode_select(self, idx, option_name):
         """Callback when user selects a mode from dropdown"""
@@ -189,6 +193,10 @@ class PyGameRenderer(Renderer):
             # Keep current sub_mode if already set, otherwise default to bars
             if self.sub_mode not in ['bars', 'curves']:
                 self.sub_mode = 'bars'
+        elif self.base_mode == 'wave':
+            # Oscilloscope modes: stream or cycle
+            if self.sub_mode not in ['stream', 'cycle']:
+                self.sub_mode = 'stream'
         else:
             self.sub_mode = None
         
@@ -196,8 +204,11 @@ class PyGameRenderer(Renderer):
     
     def _on_toggle_click(self):
         """Callback when user clicks the toggle button"""
-        # Toggle between bars and curves
-        self.sub_mode = 'curves' if self.sub_mode == 'bars' else 'bars'
+        # Toggle between variants based on current base_mode
+        if self.base_mode in ['spectrum', 'radial']:
+            self.sub_mode = 'curves' if self.sub_mode == 'bars' else 'bars'
+        elif self.base_mode == 'wave':
+            self.sub_mode = 'cycle' if self.sub_mode == 'stream' else 'stream'
         self._update_mode()
     
     def _update_mode(self):
@@ -206,12 +217,14 @@ class PyGameRenderer(Renderer):
             self.mode = 'bars' if self.sub_mode == 'bars' else 'line'
         elif self.base_mode == 'radial':
             self.mode = 'radial' if self.sub_mode == 'bars' else 'radial_curves'
+        elif self.base_mode == 'wave':
+            self.mode = 'wave' if self.sub_mode == 'stream' else 'wave_cycle'
         else:
             # Other modes don't have variants
             self.mode = self.base_mode
         
         # Update toggle button to show current mode
-        if self.sub_mode in ['bars', 'curves']:
+        if self.sub_mode in ['bars', 'curves', 'stream', 'cycle']:
             self.mode_toggle.set_mode(self.sub_mode)
     
     def _on_scale_select(self, idx, option_name):
@@ -376,6 +389,9 @@ class PyGameRenderer(Renderer):
         elif self.mode == 'wave':
             if audio_chunk is not None:
                 self._render_waveform(audio_chunk)
+        elif self.mode == 'wave_cycle':
+            if audio_chunk is not None:
+                self._render_waveform_cycle(audio_chunk)
         elif self.mode == 'radial':
             self._render_radial(spectrum)
         elif self.mode == 'radial_curves':
@@ -393,7 +409,7 @@ class PyGameRenderer(Renderer):
         self.dropdown.draw(self.screen)
         
         # Draw toggle button if in a mode that supports variants
-        if self.base_mode in ['spectrum', 'radial']:
+        if self.base_mode in ['spectrum', 'radial', 'wave']:
             self.mode_toggle.draw(self.screen)
         
         pygame.display.flip()
@@ -1006,6 +1022,103 @@ class PyGameRenderer(Renderer):
             
             if len(points) > 1:
                pygame.draw.lines(self.screen, colors[ch], False, points, 2)
+    
+    def _render_waveform_cycle(self, audio_chunk):
+        """
+        Render cycle-locked waveform display.
+        Detects individual cycles using zero-crossings and displays them
+        in a stable, repeating manner like a traditional oscilloscope.
+        """
+        # audio_chunk shape (CHUNK_SIZE, 2)
+        colors = [(0, 255, 255), (255, 0, 255)]
+        
+        # Use left channel for trigger detection
+        left_channel = audio_chunk[:, 0]
+        
+        # Find all rising edge zero crossings
+        zero_crossings = []
+        for i in range(len(left_channel) - 1):
+            if left_channel[i] < 0 and left_channel[i+1] >= 0:
+                zero_crossings.append(i)
+        
+        # Need at least 2 crossings to define a cycle
+        if len(zero_crossings) < 2:
+            # Fall back to streaming mode if no clear cycle
+            self._render_waveform(audio_chunk)
+            return
+        
+        # Extract the most recent complete cycle
+        # Use the last two zero crossings
+        cycle_start = zero_crossings[-2]
+        cycle_end = zero_crossings[-1]
+        cycle_length = cycle_end - cycle_start
+        
+        # Skip if cycle is too short or too long (noise/DC)
+        if cycle_length < 10 or cycle_length > len(audio_chunk) // 2:
+            self._render_waveform(audio_chunk)
+            return
+        
+        # Extract cycle data for both channels
+        cycle_data = audio_chunk[cycle_start:cycle_end, :]
+        
+        # Store in history for overlay
+        self.cycle_history.append(cycle_data.copy())
+        if len(self.cycle_history) > self.max_cycle_history:
+            self.cycle_history.pop(0)
+        
+        # Determine scaling
+        if self.scale_multiplier is not None:
+            scale = (WINDOW_HEIGHT / 2) * 0.8 * self.scale_multiplier
+        else:
+            # Adaptive scaling based on cycle amplitude
+            current_amp_max = np.max(np.abs(cycle_data))
+            if current_amp_max > self.waveform_max:
+                self.waveform_max = current_amp_max
+            else:
+                self.waveform_max *= self.max_decay
+                self.waveform_max = max(self.waveform_max, current_amp_max * 0.5, 0.01)
+            
+            scale = (WINDOW_HEIGHT / 2) * 0.8 / max(self.waveform_max, 0.01)
+        
+        # Draw the current cycle
+        for ch in range(2):
+            data = cycle_data[:, ch]
+            
+            # X coordinates - stretch cycle to fill width
+            x = np.linspace(0, WINDOW_WIDTH, len(data))
+            
+            # Y coordinates
+            y = (WINDOW_HEIGHT / 2) - (data * scale)
+            
+            if ch == 1:
+                y += 2  # Slight offset for visibility
+            
+            points = list(zip(x.astype(int), y.astype(int)))
+            
+            if len(points) > 1:
+                pygame.draw.lines(self.screen, colors[ch], False, points, 2)
+        
+        # Draw faded overlay of previous cycles for comparison
+        if len(self.cycle_history) > 1:
+            for i, old_cycle in enumerate(self.cycle_history[:-1]):
+                # Fade factor based on age
+                fade = 0.15 * (i + 1) / len(self.cycle_history)
+                
+                for ch in range(2):
+                    if old_cycle.shape[0] > 0:
+                        data = old_cycle[:, ch]
+                        x = np.linspace(0, WINDOW_WIDTH, len(data))
+                        y = (WINDOW_HEIGHT / 2) - (data * scale)
+                        
+                        if ch == 1:
+                            y += 2
+                        
+                        points = list(zip(x.astype(int), y.astype(int)))
+                        
+                        if len(points) > 1:
+                            # Draw with faded color
+                            faded_color = tuple(int(c * fade) for c in colors[ch])
+                            pygame.draw.lines(self.screen, faded_color, False, points, 1)
 
     def update(self):
         for event in pygame.event.get():
@@ -1017,7 +1130,7 @@ class PyGameRenderer(Renderer):
             self.scale_dropdown.handle_event(event)
             
             # Pass events to toggle button if visible
-            if self.base_mode in ['spectrum', 'radial']:
+            if self.base_mode in ['spectrum', 'radial', 'wave']:
                 self.mode_toggle.handle_event(event)
             
             # Optional: Keep spacebar as a keyboard shortcut
@@ -1029,8 +1142,9 @@ class PyGameRenderer(Renderer):
                         ('spectrum', 'curves'),
                         ('radial', 'bars'),
                         ('radial', 'curves'),
+                        ('wave', 'stream'),
+                        ('wave', 'cycle'),
                         ('spectrogram', None),
-                        ('wave', None),
                         ('phase_clock', None),
                         ('particles', None),
                         ('terrain', None)

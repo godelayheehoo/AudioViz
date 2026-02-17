@@ -172,6 +172,63 @@ class ModeToggleButton:
             
             if len(points) > 1:
                 pygame.draw.lines(screen, self.color_icon, False, points, 2)
+        
+        elif self.current_mode == 'stream':
+            # Draw single continuous wave (~) for streaming oscilloscope
+            import math
+            wave_width = 22
+            wave_height = 7
+            num_points = 20
+            
+            points = []
+            for i in range(num_points):
+                t = i / (num_points - 1)
+                x = self.center_x - wave_width // 2 + t * wave_width
+                # Single smooth sine wave
+                y = self.center_y + wave_height * 0.5 * math.sin(t * 2 * math.pi)
+                points.append((int(x), int(y)))
+            
+            if len(points) > 1:
+                pygame.draw.lines(screen, self.color_icon, False, points, 2)
+        
+        elif self.current_mode == 'cycle':
+            # Draw circular arrow (⟲) for cycle-locked oscilloscope
+            import math
+            # Draw a circular arc with an arrowhead
+            arc_radius = 10
+            arc_start = -0.3 * math.pi  # Start angle
+            arc_end = 1.5 * math.pi     # End angle (almost full circle)
+            num_points = 25
+            
+            # Draw arc
+            points = []
+            for i in range(num_points):
+                t = i / (num_points - 1)
+                angle = arc_start + t * (arc_end - arc_start)
+                x = self.center_x + arc_radius * math.cos(angle)
+                y = self.center_y + arc_radius * math.sin(angle)
+                points.append((int(x), int(y)))
+            
+            if len(points) > 1:
+                pygame.draw.lines(screen, self.color_icon, False, points, 2)
+            
+            # Draw arrowhead at the end
+            arrow_angle = arc_end
+            arrow_x = self.center_x + arc_radius * math.cos(arrow_angle)
+            arrow_y = self.center_y + arc_radius * math.sin(arrow_angle)
+            
+            # Arrow direction (tangent to circle)
+            arrow_dir = arrow_angle + math.pi / 2
+            arrow_size = 4
+            
+            arrow_points = [
+                (int(arrow_x), int(arrow_y)),
+                (int(arrow_x - arrow_size * math.cos(arrow_dir + 0.4)), 
+                 int(arrow_y - arrow_size * math.sin(arrow_dir + 0.4))),
+                (int(arrow_x - arrow_size * math.cos(arrow_dir - 0.4)), 
+                 int(arrow_y - arrow_size * math.sin(arrow_dir - 0.4)))
+            ]
+            pygame.draw.polygon(screen, self.color_icon, arrow_points)
     
     def handle_event(self, event):
         """Handle mouse events."""
