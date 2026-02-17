@@ -5,7 +5,7 @@ from scipy.interpolate import make_interp_spline
 from .base import Renderer
 from .ui import Dropdown, ModeToggleButton, ShuffleButton
 from ..config import (
-    WINDOW_WIDTH, WINDOW_HEIGHT, CHUNK_SIZE, FPS,
+    WINDOW_WIDTH, WINDOW_HEIGHT, CHUNK_SIZE, FPS, FULLSCREEN,
     SMOOTHING_FACTOR, MAX_DECAY, WAVEFORM_INITIAL_MAX,
     SILENCE_THRESHOLD, SHUFFLE_ENABLED_DEFAULT,
     MAX_HISTORY_CYCLES, SPECTROGRAM_HISTORY_LENGTH,
@@ -94,7 +94,9 @@ class ParticleSystem:
 class PyGameRenderer(Renderer):
     def __init__(self):
         pygame.init()
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        # Set display mode with optional fullscreen
+        flags = pygame.FULLSCREEN if FULLSCREEN else 0
+        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), flags)
         pygame.display.set_caption("Audio Visualizer")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("Arial", 18)

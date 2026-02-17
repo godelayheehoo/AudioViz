@@ -28,7 +28,7 @@ window_height = 480
 
 # Start in fullscreen mode (true/false)
 # Used by: src/render/pygame_render.py (window creation)
-fullscreen = false
+fullscreen = true
 
 [visualization]
 # FFT window size for frequency analysis (power of 2, >= chunk_size)
