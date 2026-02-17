@@ -1,0 +1,93 @@
+# Audio Visualizer Configuration
+# This file contains all tunable parameters for the audio visualizer.
+# Edit these values to customize behavior without modifying code.
+
+[audio]
+# Sample rate in Hz - must match your audio input device
+# Used by: src/audio/live_source.py, src/dsp/pipeline.py
+sample_rate = 48000
+
+# Number of audio frames per buffer (power of 2 recommended)
+# Smaller = lower latency, larger = more stable frequency analysis
+# Used by: src/audio/live_source.py, src/dsp/pipeline.py
+chunk_size = 1024
+
+# Number of audio channels (1 = mono, 2 = stereo)
+# Used by: src/audio/live_source.py
+channels = 2
+
+[display]
+# Target frames per second for rendering
+# Used by: src/render/pygame_render.py (update loop)
+fps = 60
+
+# Window dimensions in pixels
+# Used by: src/render/pygame_render.py (window creation)
+window_width = 800
+window_height = 480
+
+# Start in fullscreen mode (true/false)
+# Used by: src/render/pygame_render.py (window creation)
+fullscreen = false
+
+[visualization]
+# FFT window size for frequency analysis (power of 2, >= chunk_size)
+# Larger = better frequency resolution, more latency
+# Used by: src/dsp/pipeline.py (FFT computation)
+fft_size = 2048
+
+# Temporal smoothing factor for spectrum display (0.0 to 1.0)
+# Higher = smoother but slower response to changes
+# 0.0 = no smoothing, 0.9 = very smooth
+# Used by: src/render/pygame_render.py (_apply_smoothing method)
+smoothing_factor = 0.7
+
+# Decay rate for adaptive scaling maximum (0.0 to 1.0)
+# Controls how quickly the display scale adjusts downward
+# Higher = slower decay, more stable scaling
+# Used by: src/render/pygame_render.py (_normalize_spectrum method)
+max_decay = 0.995
+
+# Initial maximum amplitude for waveform display
+# Used by: src/render/pygame_render.py (waveform rendering)
+waveform_initial_max = 0.1
+
+[shuffle_mode]
+# Audio amplitude threshold for silence detection (0.0 to 1.0)
+# Signals below this level are considered "silent"
+# Higher = less sensitive (ignores quiet sounds/noise)
+# Used by: src/render/pygame_render.py (shuffle mode silence detection)
+silence_threshold = 0.03
+
+# Start with shuffle mode enabled (true/false)
+# When enabled, visualization randomly changes when audio resumes after silence
+# Used by: src/render/pygame_render.py (shuffle button initialization)
+enabled_by_default = false
+
+[waveform]
+# Number of previous waveform cycles to display as faded overlays
+# Only applies to cycle-locked oscilloscope mode
+# Used by: src/render/pygame_render.py (_render_waveform_cycle method)
+max_history_cycles = 5
+
+[spectrogram]
+# Number of FFT frames to keep in spectrogram history (waterfall depth)
+# Higher = longer time window visible, more memory usage
+# Used by: src/render/pygame_render.py (spectrogram rendering)
+history_length = 100
+
+[particles]
+# Maximum number of particles in particle field visualization
+# Lower values improve performance on slower hardware (e.g., Raspberry Pi)
+# Used by: src/render/pygame_render.py (ParticleSystem initialization)
+max_count = 400
+
+[terrain]
+# Number of FFT frames to keep for 3D terrain visualization depth
+# Used by: src/render/pygame_render.py (terrain history deques)
+history_depth = 40
+
+# Number of frequency bins to display in terrain
+# Lower = better performance, less detail
+# Used by: src/render/pygame_render.py (terrain rendering)
+num_bins = 60

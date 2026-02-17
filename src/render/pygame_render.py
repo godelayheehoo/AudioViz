@@ -4,7 +4,13 @@ import numpy as np
 from scipy.interpolate import make_interp_spline
 from .base import Renderer
 from .ui import Dropdown, ModeToggleButton, ShuffleButton
-from ..config import WINDOW_WIDTH, WINDOW_HEIGHT, CHUNK_SIZE, FPS
+from ..config import (
+    WINDOW_WIDTH, WINDOW_HEIGHT, CHUNK_SIZE, FPS,
+    SMOOTHING_FACTOR, MAX_DECAY, WAVEFORM_INITIAL_MAX,
+    SILENCE_THRESHOLD, SHUFFLE_ENABLED_DEFAULT,
+    MAX_HISTORY_CYCLES, SPECTROGRAM_HISTORY_LENGTH,
+    MAX_PARTICLES, TERRAIN_HISTORY_DEPTH, TERRAIN_NUM_BINS
+)
 import random
 from collections import deque
 
@@ -154,21 +160,21 @@ class PyGameRenderer(Renderer):
         
         # Adaptive normalization & Smoothing
         self.running_max = 1.0  # Track maximum spectrum value
-        self.max_decay = 0.995  # Decay factor for running max (slower decay = smoother)
-        self.waveform_max = 0.1  # Track maximum waveform amplitude (start small)
+        self.max_decay = MAX_DECAY
+        self.waveform_max = WAVEFORM_INITIAL_MAX
         self.smoothed_spectrum = None
-        self.smoothing_factor = 0.7  # 0.0 = no smoothing, 0.9 = very slow/smooth
+        self.smoothing_factor = SMOOTHING_FACTOR
         
         # Particle system setup
-        self.particle_system = ParticleSystem(max_particles=400)  # Conservative for RPi
+        self.particle_system = ParticleSystem(max_particles=MAX_PARTICLES)
         self.particle_trail_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.particle_trail_surf.fill((0, 0, 0))
         self.particle_trail_surf.set_alpha(255)
         
         # Spectral terrain setup
-        self.terrain_history_left = deque(maxlen=40)  # Store last 40 FFT frames
-        self.terrain_history_right = deque(maxlen=40)
-        self.terrain_num_bins = 60  # Number of frequency bins to display
+        self.terrain_history_left = deque(maxlen=TERRAIN_HISTORY_DEPTH)
+        self.terrain_history_right = deque(maxlen=TERRAIN_HISTORY_DEPTH)
+        self.terrain_num_bins = TERRAIN_NUM_BINS
         
         # Single circular toggle button for mode variants (bars vs curves)
         toggle_x = WINDOW_WIDTH - 35  # Center x position (bottom right)
@@ -181,8 +187,8 @@ class PyGameRenderer(Renderer):
         )
         
         # Track number of cycles to display in cycle-locked mode
-        self.cycle_history = []  # Store recent cycles for overlay
-        self.max_cycle_history = 5
+        self.cycle_history = []
+        self.max_cycle_history = MAX_HISTORY_CYCLES
         
         # Shuffle mode button and state
         shuffle_button_size = 30
@@ -194,9 +200,9 @@ class PyGameRenderer(Renderer):
         )
         
         # Shuffle mode state
-        self.shuffle_enabled = False
+        self.shuffle_enabled = SHUFFLE_ENABLED_DEFAULT
         self.was_silent = False
-        self.silence_threshold = 0.03  # 3% of full scale (increased to handle background noise)
+        self.silence_threshold = SILENCE_THRESHOLD
 
     def _on_mode_select(self, idx, option_name):
         """Callback when user selects a mode from dropdown"""
