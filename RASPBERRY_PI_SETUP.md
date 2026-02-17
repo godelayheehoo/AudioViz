@@ -446,42 +446,58 @@ python -m src.main --live --device hw:0,0
 See `PI_QUICKSTART.md` for more options and troubleshooting.
 
 
-### 4. Auto-Start on Boot (Optional)
+### 4. Auto-Start on Boot (Recommended)
 
-Create a systemd service:
+The best way to auto-start the visualizer on Raspberry Pi OS Lite is using auto-login with X11.
+
+**Step 1: Run the setup script**
+
 ```bash
-sudo nano /etc/systemd/system/audio-viz.service
+cd ~/audio_viz
+chmod +x setup_x11_autostart.sh
+./setup_x11_autostart.sh
 ```
 
-Add:
+**Step 2: Configure auto-login**
+
+```bash
+sudo systemctl edit getty@tty1
+```
+
+Add these lines:
+
 ```ini
-[Unit]
-Description=Audio Visualizer
-After=sound.target
-
 [Service]
-Type=simple
-User=pi
-WorkingDirectory=/home/pi/audio_viz
-Environment="DISPLAY=:0"
-Environment="SDL_VIDEODRIVER=fbcon"
-ExecStart=/home/pi/audio_viz/venv/bin/python /home/pi/audio_viz/src/main.py
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
+ExecStart=
+ExecStart=-/sbin/agetty --autologin james --noclear %I $TERM
 ```
 
-Enable and start:
+Save and exit.
+
+**Step 3: Add auto-start to bash profile**
+
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable audio-viz.service
-sudo systemctl start audio-viz.service
+cat >> ~/.bash_profile << 'EOF'
+
+# Auto-start X and visualizer on tty1
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    startx
+fi
+EOF
 ```
 
-Check status:
+**Step 4: Reboot to activate**
+
 ```bash
-sudo systemctl status audio-viz.service
+sudo reboot
+```
+
+The visualizer will now auto-start on boot!
+
+**To stop the auto-started visualizer:**
+
+```bash
+pkill -f "python -m src.main"
 ```
 
 ---

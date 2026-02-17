@@ -3,7 +3,7 @@ import pygame.surfarray
 import numpy as np
 from scipy.interpolate import make_interp_spline
 from .base import Renderer
-from .ui import Dropdown
+from .ui import Dropdown, ModeToggleButton
 from ..config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS
 import random
 from collections import deque
@@ -93,17 +93,19 @@ class PyGameRenderer(Renderer):
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("Arial", 18)
         self.running = True
-        self.mode = 'bars' # 'bars', 'line', 'spectrogram', 'wave'
         
-        # Dropdown menu for mode selection
-        dropdown_options = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock", "Particle Field", "Spectral Terrain"]
+        # Two-level mode tracking: base_mode (category) and sub_mode (variant)
+        self.base_mode = 'spectrum'  # spectrum, radial, spectrogram, wave, phase_clock, particles, terrain
+        self.sub_mode = 'bars'  # bars, curves, or None
+        self.mode = 'bars'  # Computed from base_mode + sub_mode for backward compatibility
+        
+        # Dropdown menu for mode selection (consolidated)
+        dropdown_options = ["Spectrum", "Radial", "Spectrogram", "Oscilloscope", "Phase Clock", "Particle Field", "Spectral Terrain"]
         self.mode_map = {
-            "Spectrum Bars": "bars",
-            "Spectrum Curves": "line",
+            "Spectrum": "spectrum",
+            "Radial": "radial",
             "Spectrogram": "spectrogram",
             "Oscilloscope": "wave",
-            "Radial Spectrum": "radial",
-            "Radial Curves": "radial_curves",
             "Phase Clock": "phase_clock",
             "Particle Field": "particles",
             "Spectral Terrain": "terrain"
@@ -167,10 +169,50 @@ class PyGameRenderer(Renderer):
         self.terrain_history_left = deque(maxlen=40)  # Store last 40 FFT frames
         self.terrain_history_right = deque(maxlen=40)
         self.terrain_num_bins = 60  # Number of frequency bins to display
+        
+        # Single circular toggle button for mode variants (bars vs curves)
+        toggle_x = 35  # Center x position
+        toggle_y = WINDOW_HEIGHT - 35  # Center y position
+        toggle_radius = 25
+        
+        self.mode_toggle = ModeToggleButton(
+            toggle_x, toggle_y, toggle_radius,
+            self.font, current_mode='bars', callback=self._on_toggle_click
+        )
 
     def _on_mode_select(self, idx, option_name):
         """Callback when user selects a mode from dropdown"""
-        self.mode = self.mode_map[option_name]
+        self.base_mode = self.mode_map[option_name]
+        
+        # Set default sub_mode for modes that support variants
+        if self.base_mode in ['spectrum', 'radial']:
+            # Keep current sub_mode if already set, otherwise default to bars
+            if self.sub_mode not in ['bars', 'curves']:
+                self.sub_mode = 'bars'
+        else:
+            self.sub_mode = None
+        
+        self._update_mode()
+    
+    def _on_toggle_click(self):
+        """Callback when user clicks the toggle button"""
+        # Toggle between bars and curves
+        self.sub_mode = 'curves' if self.sub_mode == 'bars' else 'bars'
+        self._update_mode()
+    
+    def _update_mode(self):
+        """Update the actual mode based on base_mode and sub_mode"""
+        if self.base_mode == 'spectrum':
+            self.mode = 'bars' if self.sub_mode == 'bars' else 'line'
+        elif self.base_mode == 'radial':
+            self.mode = 'radial' if self.sub_mode == 'bars' else 'radial_curves'
+        else:
+            # Other modes don't have variants
+            self.mode = self.base_mode
+        
+        # Update toggle button to show current mode
+        if self.sub_mode in ['bars', 'curves']:
+            self.mode_toggle.set_mode(self.sub_mode)
     
     def _on_scale_select(self, idx, option_name):
         """Callback when user selects a scale from dropdown"""
@@ -349,6 +391,10 @@ class PyGameRenderer(Renderer):
         # Draw dropdowns
         self.scale_dropdown.draw(self.screen)
         self.dropdown.draw(self.screen)
+        
+        # Draw toggle button if in a mode that supports variants
+        if self.base_mode in ['spectrum', 'radial']:
+            self.mode_toggle.draw(self.screen)
         
         pygame.display.flip()
 
@@ -970,14 +1016,47 @@ class PyGameRenderer(Renderer):
             self.dropdown.handle_event(event)
             self.scale_dropdown.handle_event(event)
             
+            # Pass events to toggle button if visible
+            if self.base_mode in ['spectrum', 'radial']:
+                self.mode_toggle.handle_event(event)
+            
             # Optional: Keep spacebar as a keyboard shortcut
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    modes = ['bars', 'line', 'spectrogram', 'wave', 'radial', 'radial_curves', 'phase_clock', 'particles', 'terrain']
-                    mode_names = ["Spectrum Bars", "Spectrum Curves", "Spectrogram", "Oscilloscope", "Radial Spectrum", "Radial Curves", "Phase Clock", "Particle Field", "Spectral Terrain"]
-                    current_idx = modes.index(self.mode)
-                    next_idx = (current_idx + 1) % len(modes)
-                    self.mode = modes[next_idx]
-                    # Update dropdown to match
-                    self.dropdown.selected_idx = next_idx
+                    # Cycle through all mode combinations
+                    all_modes = [
+                        ('spectrum', 'bars'),
+                        ('spectrum', 'curves'),
+                        ('radial', 'bars'),
+                        ('radial', 'curves'),
+                        ('spectrogram', None),
+                        ('wave', None),
+                        ('phase_clock', None),
+                        ('particles', None),
+                        ('terrain', None)
+                    ]
+                    
+                    # Find current mode in list
+                    current = (self.base_mode, self.sub_mode)
+                    try:
+                        current_idx = all_modes.index(current)
+                    except ValueError:
+                        current_idx = 0
+                    
+                    # Move to next mode
+                    next_idx = (current_idx + 1) % len(all_modes)
+                    self.base_mode, self.sub_mode = all_modes[next_idx]
+                    self._update_mode()
+                    
+                    # Update dropdown to match base_mode
+                    dropdown_map = {
+                        'spectrum': 0,
+                        'radial': 1,
+                        'spectrogram': 2,
+                        'wave': 3,
+                        'phase_clock': 4,
+                        'particles': 5,
+                        'terrain': 6
+                    }
+                    self.dropdown.selected_idx = dropdown_map.get(self.base_mode, 0)
         self.clock.tick(FPS)

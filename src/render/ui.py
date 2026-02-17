@@ -91,3 +91,97 @@ class Dropdown:
                         self.is_open = True
                         return True
         return False
+
+
+class ModeToggleButton:
+    """Single circular toggle button that switches between bars and curves modes."""
+    def __init__(self, x, y, radius, font, current_mode='bars', callback=None):
+        """
+        Args:
+            x, y: Center position
+            radius: Circle radius
+            font: pygame font
+            current_mode: 'bars' or 'curves' - the mode currently being displayed
+            callback: Function to call when clicked (no arguments)
+        """
+        self.center_x = x
+        self.center_y = y
+        self.radius = radius
+        self.font = font
+        self.current_mode = current_mode
+        self.callback = callback
+        
+        # Colors - translucent grey with white symbol
+        self.color_bg = (60, 60, 60, 180)  # Translucent grey
+        self.color_bg_hover = (80, 80, 80, 200)  # Slightly lighter on hover
+        self.color_icon = (255, 255, 255)  # White icon
+        self.color_border = (100, 100, 100, 200)
+    
+    def set_mode(self, mode):
+        """Update the current mode being displayed."""
+        self.current_mode = mode
+    
+    def draw(self, screen):
+        """Draw the circular toggle button with current mode icon."""
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Check if mouse is hovering (circular hit detection)
+        dx = mouse_pos[0] - self.center_x
+        dy = mouse_pos[1] - self.center_y
+        is_hovered = (dx * dx + dy * dy) <= (self.radius * self.radius)
+        
+        # Create a surface with alpha for translucency
+        button_surf = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
+        
+        # Background color based on hover state
+        bg_color = self.color_bg_hover if is_hovered else self.color_bg
+        
+        # Draw circle on the surface
+        pygame.draw.circle(button_surf, bg_color, (self.radius, self.radius), self.radius)
+        pygame.draw.circle(button_surf, self.color_border, (self.radius, self.radius), self.radius, 2)
+        
+        # Blit the translucent circle to screen
+        screen.blit(button_surf, (self.center_x - self.radius, self.center_y - self.radius))
+        
+        # Draw icon based on current mode
+        if self.current_mode == 'bars':
+            # Draw three vertical bars (|||)
+            bar_width = 2
+            bar_height = 16
+            spacing = 5
+            
+            for i in range(3):
+                x = self.center_x - spacing + (i * spacing)
+                y = self.center_y - bar_height // 2
+                pygame.draw.rect(screen, self.color_icon, (x - bar_width // 2, y, bar_width, bar_height))
+        
+        elif self.current_mode == 'curves':
+            # Draw wavy line (~~)
+            import math
+            wave_width = 20
+            wave_height = 6
+            num_points = 15
+            
+            points = []
+            for i in range(num_points):
+                t = i / (num_points - 1)
+                x = self.center_x - wave_width // 2 + t * wave_width
+                # Two complete sine waves
+                y = self.center_y + wave_height * 0.5 * math.sin(t * 4 * math.pi)
+                points.append((int(x), int(y)))
+            
+            if len(points) > 1:
+                pygame.draw.lines(screen, self.color_icon, False, points, 2)
+    
+    def handle_event(self, event):
+        """Handle mouse events."""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                # Circular hit detection
+                dx = event.pos[0] - self.center_x
+                dy = event.pos[1] - self.center_y
+                if (dx * dx + dy * dy) <= (self.radius * self.radius):
+                    if self.callback:
+                        self.callback()
+                    return True
+        return False

@@ -2,28 +2,62 @@
 
 Quick reference for running the audio visualizer on your Raspberry Pi Zero 2 WH.
 
-## Running the Visualizer
+## Auto-Start Setup (Recommended)
 
-### Option 1: Use the Helper Script (Recommended)
+The visualizer is configured to auto-start on boot using X11.
+
+### Initial Setup
+
+Run the setup script once:
 
 ```bash
 cd ~/AudioViz
-chmod +x run_pi.sh
-./run_pi.sh
+chmod +x setup_x11_autostart.sh
+./setup_x11_autostart.sh
 ```
 
-This automatically:
-- Sets up the framebuffer display
-- Activates the virtual environment
-- Runs with live audio from the PCM1808
+Then configure auto-login:
 
-### Option 2: Manual Command
+```bash
+# Enable auto-login on tty1
+sudo systemctl edit getty@tty1
+```
+
+Add these lines in the editor:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin james --noclear %I $TERM
+```
+
+Save and exit (Ctrl+X, Y, Enter).
+
+Add auto-start to bash profile:
+
+```bash
+cat >> ~/.bash_profile << 'EOF'
+
+# Auto-start X and visualizer on tty1
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    startx
+fi
+EOF
+```
+
+**Reboot to start:**
+
+```bash
+sudo reboot
+```
+
+The visualizer will now auto-start on boot and display on your monitor!
+
+### Manual Start (for testing)
 
 ```bash
 cd ~/AudioViz
 source venv/bin/activate
-export SDL_VIDEODRIVER=fbcon
-export SDL_FBDEV=/dev/fb0
 python -m src.main --live --device hw:0,0
 ```
 
@@ -89,41 +123,81 @@ python -m src.main --live --device hw:0,0
 python -m src.main --file path/to/audio.wav
 ```
 
+## Managing the Auto-Started Visualizer
+
+### Stop the Visualizer
+
+```bash
+# Kill the running visualizer
+pkill -f "python -m src.main"
+```
+
+### Restart the Visualizer
+
+```bash
+# Reboot (cleanest method)
+sudo reboot
+
+# Or kill and let auto-login restart it
+sudo pkill -u james
+```
+
+### Disable Auto-Start
+
+Remove the auto-start from `.bash_profile`:
+
+```bash
+nano ~/.bash_profile
+# Delete or comment out the startx section
+```
+
 ## Troubleshooting
 
-### "Killed" Error
+### Audio Not Responding
 
-This means the Pi ran out of memory. Solutions:
-- Use `--live` instead of file playback
-- Use a smaller audio file
-- Reduce `FFT_SIZE` in config
+Test if hardware is capturing audio:
 
-### No Display Output
-
-Try different SDL video drivers:
 ```bash
-export SDL_VIDEODRIVER=directfb  # or x11
-python -m src.main --live
+# Stop the visualizer first
+pkill -f "python -m src.main"
+
+# Record a test
+arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
+
+# Copy to your computer and play it
+scp james@raspberrypi.local:~/test.wav .
 ```
 
-### No Audio Input
+If you hear silence, check:
+- Audio source is connected to PCM1808 input (LIN, RIN, GND)
+- Audio source is playing and volume is up
+- Solder joints on audio input connector
+- PCM1808 may need input coupling capacitors
 
-Check the PCM1808 is detected:
-```bash
-arecord -l
-```
+### "Device or resource busy"
 
-Test recording:
+The visualizer is already running (this is normal after auto-start):
+
 ```bash
+# Stop it first
+pkill -f "python -m src.main"
+
+# Then run your command
 arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 2 test.wav
 ```
 
-### Import Errors
+### Display Not Showing
 
-Make sure you're in the project directory and using `-m`:
+Check if X11 is running:
+
 ```bash
-cd ~/AudioViz
-python -m src.main --live
+ps aux | grep X
+```
+
+Check for errors:
+
+```bash
+cat ~/.local/share/xorg/Xorg.0.log
 ```
 
 ## Auto-Start on Boot
