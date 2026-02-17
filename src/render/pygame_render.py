@@ -171,7 +171,7 @@ class PyGameRenderer(Renderer):
         self.terrain_num_bins = 60  # Number of frequency bins to display
         
         # Single circular toggle button for mode variants (bars vs curves)
-        toggle_x = 35  # Center x position
+        toggle_x = WINDOW_WIDTH - 35  # Center x position (bottom right)
         toggle_y = WINDOW_HEIGHT - 35  # Center y position
         toggle_radius = 25
         
