@@ -234,11 +234,100 @@ class ModeToggleButton:
         """Handle mouse events."""
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
-                # Circular hit detection
+                # Check if click is within the circular button
                 dx = event.pos[0] - self.center_x
                 dy = event.pos[1] - self.center_y
-                if (dx * dx + dy * dy) <= (self.radius * self.radius):
+                distance = (dx * dx + dy * dy) ** 0.5
+                
+                if distance <= self.radius:
                     if self.callback:
                         self.callback()
+                    return True
+        return False
+
+
+class ShuffleButton:
+    """A toggle button for shuffle mode with 3x3 grid of diagonal lines icon."""
+    
+    def __init__(self, x, y, size, callback=None):
+        """
+        Args:
+            x, y: Top-left position
+            size: Button size (square)
+            callback: Function to call when clicked
+        """
+        self.rect = pygame.Rect(x, y, size, size)
+        self.callback = callback
+        self.is_active = False
+        
+        # Colors
+        self.color_bg = (60, 60, 60, 180)  # Translucent grey
+        self.color_icon_active = (255, 255, 255)  # White when active
+        self.color_icon_inactive = (80, 80, 80)  # Dark grey when inactive
+        self.color_border = (100, 100, 100)
+    
+    def toggle(self):
+        """Toggle the active state."""
+        self.is_active = not self.is_active
+        return self.is_active
+    
+    def set_active(self, active):
+        """Set the active state directly."""
+        self.is_active = active
+    
+    def draw(self, screen):
+        """Draw the shuffle button."""
+        mouse_pos = pygame.mouse.get_pos()
+        is_hovered = self.rect.collidepoint(mouse_pos)
+        
+        # Create surface with alpha for translucency
+        button_surf = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
+        
+        # Background
+        bg_color = self.color_bg
+        if is_hovered:
+            # Slightly brighter on hover
+            bg_color = (80, 80, 80, 200)
+        
+        pygame.draw.rect(button_surf, bg_color, (0, 0, self.rect.width, self.rect.height), border_radius=4)
+        pygame.draw.rect(button_surf, self.color_border, (0, 0, self.rect.width, self.rect.height), 1, border_radius=4)
+        
+        # Blit to screen
+        screen.blit(button_surf, self.rect.topleft)
+        
+        # Draw 3x3 grid of diagonal lines (backtick pattern)
+        icon_color = self.color_icon_active if self.is_active else self.color_icon_inactive
+        
+        # Grid parameters
+        grid_size = 3
+        cell_size = self.rect.width // 5  # Leave margins
+        spacing = cell_size + 2
+        start_x = self.rect.x + (self.rect.width - (grid_size - 1) * spacing - cell_size) // 2
+        start_y = self.rect.y + (self.rect.height - (grid_size - 1) * spacing - cell_size) // 2
+        
+        # Draw 3x3 grid of diagonal lines (backtick ` shape)
+        for row in range(grid_size):
+            for col in range(grid_size):
+                # Center position of this cell
+                cx = start_x + col * spacing + cell_size // 2
+                cy = start_y + row * spacing + cell_size // 2
+                
+                # Draw short diagonal line (top-left to bottom-right, like `)
+                line_len = cell_size // 2
+                x1 = cx - line_len // 2
+                y1 = cy - line_len // 2
+                x2 = cx + line_len // 2
+                y2 = cy + line_len // 2
+                
+                pygame.draw.line(screen, icon_color, (x1, y1), (x2, y2), 2)
+    
+    def handle_event(self, event):
+        """Handle mouse events."""
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                if self.rect.collidepoint(event.pos):
+                    self.toggle()
+                    if self.callback:
+                        self.callback(self.is_active)
                     return True
         return False

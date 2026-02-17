@@ -3,8 +3,8 @@ import pygame.surfarray
 import numpy as np
 from scipy.interpolate import make_interp_spline
 from .base import Renderer
-from .ui import Dropdown, ModeToggleButton
-from ..config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS
+from .ui import Dropdown, ModeToggleButton, ShuffleButton
+from ..config import WINDOW_WIDTH, WINDOW_HEIGHT, CHUNK_SIZE, FPS
 import random
 from collections import deque
 
@@ -183,6 +183,20 @@ class PyGameRenderer(Renderer):
         # Track number of cycles to display in cycle-locked mode
         self.cycle_history = []  # Store recent cycles for overlay
         self.max_cycle_history = 5
+        
+        # Shuffle mode button and state
+        shuffle_button_size = 30
+        shuffle_button_x = WINDOW_WIDTH - 270  # Left of the dropdown
+        shuffle_button_y = 10
+        self.shuffle_button = ShuffleButton(
+            shuffle_button_x, shuffle_button_y, shuffle_button_size,
+            callback=self._on_shuffle_toggle
+        )
+        
+        # Shuffle mode state
+        self.shuffle_enabled = False
+        self.was_silent = False
+        self.silence_threshold = 0.03  # 3% of full scale (increased to handle background noise)
 
     def _on_mode_select(self, idx, option_name):
         """Callback when user selects a mode from dropdown"""
@@ -226,6 +240,51 @@ class PyGameRenderer(Renderer):
         # Update toggle button to show current mode
         if self.sub_mode in ['bars', 'curves', 'stream', 'cycle']:
             self.mode_toggle.set_mode(self.sub_mode)
+    
+    def _on_shuffle_toggle(self, is_active):
+        """Callback when shuffle button is toggled"""
+        self.shuffle_enabled = is_active
+    
+    def _random_mode_switch(self):
+        """Switch to a random mode combination"""
+        import random
+        
+        # All possible mode combinations (equally weighted)
+        all_modes = [
+            ('spectrum', 'bars'),
+            ('spectrum', 'curves'),
+            ('radial', 'bars'),
+            ('radial', 'curves'),
+            ('wave', 'stream'),
+            ('wave', 'cycle'),
+            ('spectrogram', None),
+            ('phase_clock', None),
+            ('particles', None),
+            ('terrain', None)
+        ]
+        
+        # Pick a random mode
+        new_base_mode, new_sub_mode = random.choice(all_modes)
+        
+        # Update mode
+        self.base_mode = new_base_mode
+        self.sub_mode = new_sub_mode
+        self._update_mode()
+        
+        # Update dropdown to match
+        mode_to_dropdown = {
+            'spectrum': 'Spectrum',
+            'radial': 'Radial',
+            'spectrogram': 'Spectrogram',
+            'wave': 'Oscilloscope',
+            'phase_clock': 'Phase Clock',
+            'particles': 'Particle Field',
+            'terrain': 'Spectral Terrain'
+        }
+        
+        dropdown_option = mode_to_dropdown.get(self.base_mode)
+        if dropdown_option and dropdown_option in self.dropdown.options:
+            self.dropdown.selected_idx = self.dropdown.options.index(dropdown_option)
     
     def _on_scale_select(self, idx, option_name):
         """Callback when user selects a scale from dropdown"""
@@ -374,6 +433,20 @@ class PyGameRenderer(Renderer):
         if spectrum is None or len(spectrum) == 0:
             return
         
+        # Shuffle mode: detect silence and trigger mode change on audio resume
+        if self.shuffle_enabled and audio_chunk is not None:
+            # Calculate current audio amplitude
+            current_amplitude = np.max(np.abs(audio_chunk))
+            is_silent = current_amplitude < self.silence_threshold
+            
+            # Detect transition from silence to sound (not silent anymore, but was silent before)
+            if self.was_silent and not is_silent:
+                # Audio resumed - switch to random mode
+                self._random_mode_switch()
+            
+            # Update state for next frame
+            self.was_silent = is_silent
+        
         # Normalize spectrum for better visualization across different audio files
         spectrum = self._normalize_spectrum(spectrum)
         
@@ -407,6 +480,9 @@ class PyGameRenderer(Renderer):
         # Draw dropdowns
         self.scale_dropdown.draw(self.screen)
         self.dropdown.draw(self.screen)
+        
+        # Draw shuffle button
+        self.shuffle_button.draw(self.screen)
         
         # Draw toggle button if in a mode that supports variants
         if self.base_mode in ['spectrum', 'radial', 'wave']:
@@ -1128,6 +1204,9 @@ class PyGameRenderer(Renderer):
             # Pass events to dropdowns
             self.dropdown.handle_event(event)
             self.scale_dropdown.handle_event(event)
+            
+            # Pass events to shuffle button
+            self.shuffle_button.handle_event(event)
             
             # Pass events to toggle button if visible
             if self.base_mode in ['spectrum', 'radial', 'wave']:
