@@ -92,9 +92,17 @@ sudo apt update
 sudo apt upgrade -y
 ```
 
-### 3. Enable I2C and I2S in Boot Config
+### 3. Enable I2C and I2S Interfaces
 
-Edit the boot configuration:
+**Step 3a: Enable I2C via raspi-config**
+The Si5351A clock generator requires I2C to be explicitly enabled in the OS:
+1. Run `sudo raspi-config`
+2. Navigate to **Interface Options** -> **I2C**
+3. Select **<Yes>** to enable the ARM I2C interface
+4. Select **<Ok>**, then **<Finish>**
+
+**Step 3b: Update Boot Config**
+Edit the boot configuration to enable I2S and set the correct overlays:
 ```bash
 sudo nano /boot/firmware/config.txt
 ```
@@ -262,21 +270,6 @@ pcm.capture {
 > - Some PCM1808 modules have physical jumpers or trimpots for gain adjustment
 > - Check your specific module's documentation for hardware gain controls
 
-### 4. Test Audio Capture
-
-Record a 5-second test:
-```bash
-arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
-```
-
-> **Note:** The PCM1808 on Raspberry Pi uses S32_LE format (24-bit audio in 32-bit containers), not S24_LE.
-
-Play it back (you'll need audio output configured or copy to another device):
-```bash
-aplay test.wav
-```
-
----
 
 ## Software Installation
 
@@ -341,7 +334,30 @@ pip install RPi.GPIO  # If you need GPIO control
 
 ## Testing & Verification
 
-### 1. Test Audio Input with sounddevice
+### 1. Initialize Master Clock
+Before ANY audio testing, the Si5351A must be running to provide the master clock.
+```bash
+cd ~/audio_viz
+source venv/bin/activate
+python rpi_setup/setup_clock.py
+```
+*(You should see "Success! Si5351A CLK0 is now generating 12.288 MHz")*
+
+### 2. Test Audio Capture (ALSA)
+Record a 5-second test from the hardware directly:
+```bash
+arecord -D hw:1,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
+```
+
+> **Note:** The PCM1808 on Raspberry Pi uses S32_LE format (24-bit audio in 32-bit containers), not S24_LE.
+
+To quickly verify if actual audio was captured, inspect the file's raw bytes:
+```bash
+hexdump -C test.wav | head -n 20
+```
+If the output shows varying hex values (e.g., `a1 4f 33...`) after the WAV header, audio is being captured! If it only shows `00 00 00 00`, no audio data is being received (check clock and wiring).
+
+### 3. Test Audio Input with sounddevice
 
 Create a quick test script:
 ```bash
@@ -687,7 +703,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 4. Test audio
-arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
+arecord -D hw:1,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
 
 # 5. Run visualizer
 export SDL_VIDEODRIVER=fbcon

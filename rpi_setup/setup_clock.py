@@ -22,11 +22,24 @@ def setup_master_clock():
         si5351 = adafruit_si5351.SI5351(i2c)
         
         # Set CLK0 to exactly 12.288 MHz
-        # (256 * 48kHz sampling rate)
-        target_freq = 12288000
-        si5351.clock_0.configure_integer(si5351.pll_a, target_freq)
+        # To get 12.288 MHz from the 25 MHz internal crystal:
+        # We need PLL to be between 15x and 90x of 25MHz (375 MHz to 2250 MHz)
+        # And the output divider must be an even integer (if possible) for best jitter, or just a valid integer.
+        
+        # Let's use an output divider of 64
+        # Target PLL = 12.288 MHz * 64 = 786.432 MHz
+        # PLL Multiplier = 786.432 MHz / 25 MHz = 31.45728
+        # 31.45728 = 31 + (45728 / 100000) = 31 + (1429 / 3125)
+        
+        # Configure PLL A to 786.432 MHz
+        si5351.pll_a.configure_fractional(31, 1429, 3125)
+        
+        # Configure CLK0 to divide PLL A by exactly 64
+        si5351.clock_0.configure_integer(si5351.pll_a, 64)
+        
         si5351.outputs_enabled = True
         
+        target_freq = 12288000
         print(f"Success! Si5351A CLK0 is now generating {target_freq / 1_000_000} MHz.")
         return True
         
