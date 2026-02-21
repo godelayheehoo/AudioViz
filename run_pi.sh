@@ -19,7 +19,7 @@ sudo chmod 666 /dev/fb0 2>/dev/null || true
 export SDL_VIDEODRIVER=fbcon
 export SDL_FBDEV=/dev/fb0
 export SDL_NOMOUSE=1
-
+        
 # Force ALSA backend for sounddevice
 export SD_ENABLE_ALSA=1
 
@@ -30,4 +30,8 @@ fi
 
 # Run with live audio by default (use --file to override)
 # Use python -m to ensure proper module imports
+
+# Start the master clock generator
+python rpi_setup/setup_clock.py || { echo "WARNING: Si5351A clock initialization failed. Audio may not work."; }
+
 python -m src.main --live --device hw:0,0 "$@"

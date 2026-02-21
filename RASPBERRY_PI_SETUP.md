@@ -29,18 +29,29 @@ Complete instructions for setting up the audio visualization project on a Raspbe
 
 ## Hardware Connections
 
-### PCM1808 to Raspberry Pi Zero 2 WH Pin Mapping
+### Master Clock Generator (Si5351A)
+The PCM1808 requires a precise 12.288 MHz master clock. The Raspberry Pi struggles to generate this cleanly, so we use an Si5351A I2C clock generator.
+
+| Si5351A Pin | Function | Pi Zero 2 WH / PCM1808 Connection |
+|-------------|----------|-----------------------------------|
+| VIN / VCC   | Power    | Pi 3.3V (Pin 1 or 17) |
+| GND         | Ground   | Pi GND (Pin 6, 9, etc.) |
+| SDA         | I2C Data | Pi GPIO 2 (Pin 3) |
+| SCL         | I2C Clock| Pi GPIO 3 (Pin 5) |
+| CLK0 / Out0 | Clock Out| **PCM1808 SCK Pin** |
+
+### PCM1808 to Raspberry Pi Pin Mapping
 
 Connect the PCM1808 to your Pi's GPIO header as follows:
 
-| PCM1808 Pin | Function | Pi Zero 2 WH GPIO | Physical Pin |
-|-------------|----------|-------------------|-----------------|
-| BCK         | Bit Clock | GPIO 18 (PCM_CLK) | Pin 12 |
-| LRCK / LRC  | LR Clock (Word Select) | GPIO 19 (PCM_FS) | Pin 35 |
-| DATA/DOUT/OUT | Data Out | GPIO 20 (PCM_DIN) | Pin 38 |
-| SCK         | System Clock | GPIO 4 (GPCLK0) | Pin 7 |
-| VDD / 3.3   | Power (3.3V) | 3.3V | Pin 1 or 17 |
-| GND         | Ground | GND | Pin 6, 9, 14, 20, 25, 30, 34, or 39 |
+| PCM1808 Pin | Function | Connection |
+|-------------|----------|------------|
+| SCK         | System Clock | **Si5351A CLK0** |
+| BCK         | Bit Clock | Pi GPIO 18 (Pin 12) |
+| LRCK / LRC  | LR Clock (Word Select) | Pi GPIO 19 (Pin 35) |
+| DATA/DOUT/OUT | Data Out | Pi GPIO 20 (Pin 38) |
+| VDD / 3.3   | Power (3.3V) | Pi 3.3V |
+| GND         | Ground | Pi GND |
 
 > **Note:** Some PCM1808 modules have additional pins (FMY, MDI, MDO, +5V) for format/mode configuration. For basic I2S operation, you typically only need to connect the pins listed above. Leave FMY, MDI, and MDO unconnected unless your specific module documentation requires otherwise.
 
@@ -52,11 +63,11 @@ Connect your audio source to the PCM1808:
 
 ### Important Notes
 
-- The PCM1808 requires a master clock (MCLK). We'll use GPIO 4 to generate this. (This may not be the case, try without first.s)
 - Ensure all ground connections are solid to minimize noise.
-- Use short wires for I2S signals to reduce interference.
+- Use short wires for I2S and Clock signals to reduce interference.
 
 ---
+
 
 ## Raspberry Pi OS Setup
 
@@ -81,7 +92,7 @@ sudo apt update
 sudo apt upgrade -y
 ```
 
-### 3. Enable I2S in Boot Config
+### 3. Enable I2C and I2S in Boot Config
 
 Edit the boot configuration:
 ```bash
@@ -90,24 +101,21 @@ sudo nano /boot/firmware/config.txt
 
 Add/modify these lines:
 ```ini
+# Enable I2C (required for Si5351A clock generator)
+dtparam=i2c_arm=on
+
 # Enable I2S
 dtparam=i2s=on
 
 # Disable onboard audio (conflicts with I2S)
 dtparam=audio=off
 
-# Enable master clock on GPIO 4 (12.288 MHz for 48kHz audio)
-dtoverlay=pwm,pin=4,func=4
-```
-
-**Important:** For the PCM1808, we need a device tree overlay. Add:
-```ini
 # PCM1808 I2S ADC
 dtoverlay=i2s-mmap
 dtoverlay=googlevoicehat-soundcard
 ```
 
-> **Note:** The `googlevoicehat-soundcard` overlay works well with PCM1808-style ADCs. If this doesn't work, we'll create a custom overlay.
+> **Note:** The `googlevoicehat-soundcard` overlay configures the Pi to expect 48kHz audio. The external Si5351A provides the necessary 12.288 MHz master clock to the PCM1808 to make this work.
 
 Reboot:
 ```bash
@@ -193,7 +201,7 @@ Compile and use it:
 sudo dtc -@ -I dts -O dtb -o /boot/overlays/pcm1808.dtbo /boot/overlays/pcm1808-overlay.dts
 ```
 
-Then update `/boot/config.txt`:
+Then update `/boot/firmware/config.txt`:
 ```ini
 dtoverlay=pcm1808
 ```
@@ -320,6 +328,7 @@ source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
+*(Note: `requirements.txt` now includes `adafruit-circuitpython-si5351` for the clock generator)*
 
 ### 5. Install Additional Pi-Specific Dependencies
 
@@ -438,6 +447,10 @@ cd ~/audio_viz
 source venv/bin/activate
 export SDL_VIDEODRIVER=fbcon
 export SDL_FBDEV=/dev/fb0
+
+# Start master clock generator first
+python rpi_setup/setup_clock.py
+
 python -m src.main --live --device hw:0,0
 ```
 
@@ -454,8 +467,8 @@ The best way to auto-start the visualizer on Raspberry Pi OS Lite is using auto-
 
 ```bash
 cd ~/audio_viz
-chmod +x setup_x11_autostart.sh
-./setup_x11_autostart.sh
+chmod +x rpi_setup/setup_x11_autostart.sh
+./rpi_setup/setup_x11_autostart.sh
 ```
 
 **Step 2: Configure auto-login**
@@ -546,7 +559,7 @@ The Pi Zero 2 WH has limited CPU. To optimize:
 
 3. **Overclock (carefully):**
    ```bash
-   sudo nano /boot/config.txt
+   sudo nano /boot/firmware/config.txt
    # Add:
    # arm_freq=1200
    # over_voltage=2
@@ -574,6 +587,34 @@ export SD_ENABLE_ALSA=1
 import sounddevice as sd
 sd.default.device = 'hw:0,0'
 ```
+
+### Hardware Checks
+Oscilloscope checks (in order of priority):
+
+#### Si5351A Clock Output (most important first)
+Probe Si5351A CLK0 (the wire going to PCM1808 SCK):
+
+- You should see a clean 12.288 MHz square wave at ~3.3V amplitude. Verify frequency precisely — the PCM1808 is picky about this. Any significant deviation will cause garbled or no audio.
+- Check for ringing or overshoot on edges. Long wires here are the enemy; if you see ugly edges, shorten the wire or add a small series resistor (22–33Ω) near the source.
+
+#### I2S Bus Lines (BCK and LRCK)
+These are driven by the Raspberry Pi once audio capture starts (arecord running):
+
+- BCK (GPIO 18): Should be 3.072 MHz (= 48kHz × 64 bits per frame). This is the bit clock.
+- LRCK (GPIO 19): Should be exactly 48kHz — a square wave that toggles between left and right channel. Easy to verify: it should be exactly 1/256th the frequency of the master clock.
+- Trigger your scope on LRCK and verify BCK gives you exactly 32 cycles per LRCK half-period (for 32-bit frames in S32_LE mode).
+    
+#### DATA line (GPIO 20)
+With audio playing into the PCM1808, you should see activity on the data line synchronized to BCK. With silence, it may be all zeros — that's fine. If you see random noise rather than clean synchronized transitions, something is wrong with the clock or power.
+
+#### Power rails
+Use the scope (or multimeter) to check for noise on 3.3V at the PCM1808 VDD pin. You want ripple under ~50mV. The Pi's 3.3V rail can be noisy; if audio is hummy or noisy, decoupling capacitors (100nF ceramic close to the PCM1808 power pins) can help.
+
+#### Multimeter checks:
+
+- Continuity on all ground connections between Pi, Si5351A, and PCM1808
+- Confirm 3.3V is actually reaching the Si5351A VIN and PCM1808 VDD pins
+- Check I2C pull-up resistors are present on SDA/SCL (should read ~3.3V at rest) — if the Si5351A isn't initializing, missing pull-ups are a common culprit   
 
 ---
 
@@ -608,7 +649,7 @@ For a clean "kiosk" look, you can hide the cursor in `src/render/pygame_render.p
 1. **Use 48kHz sample rate** - Well supported and good balance
 2. **Disable Bluetooth** if not needed: `sudo systemctl disable bluetooth`
 3. **Disable WiFi** if using ethernet: `sudo rfkill block wifi`
-4. **Increase GPU memory** in `/boot/config.txt`: `gpu_mem=128`
+4. **Increase GPU memory** in `/boot/firmware/config.txt`: `gpu_mem=128`
 5. **Use lite OS** - No desktop environment overhead
 6. **Consider real-time kernel** for ultra-low latency (advanced)
 
@@ -628,9 +669,9 @@ For a clean "kiosk" look, you can hide the cursor in `src/render/pygame_render.p
 For experienced users, here's the condensed version:
 
 ```bash
-# 1. Enable I2S in /boot/config.txt
-echo "dtparam=i2s=on" | sudo tee -a /boot/config.txt
-echo "dtoverlay=googlevoicehat-soundcard" | sudo tee -a /boot/config.txt
+# 1. Enable I2S in /boot/firmware/config.txt
+echo "dtparam=i2s=on" | sudo tee -a /boot/firmware/config.txt   
+echo "dtoverlay=googlevoicehat-soundcard" | sudo tee -a /boot/firmware/config.txt
 sudo reboot
 
 # 2. Install dependencies

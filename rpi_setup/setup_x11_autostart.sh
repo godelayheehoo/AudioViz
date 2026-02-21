@@ -23,8 +23,11 @@ openbox &
 sleep 1
 
 # Start the visualizer
-cd ~/AudioViz
+cd ~/audio_viz
 source venv/bin/activate
+
+# Start master clock generator first
+python rpi_setup/setup_clock.py || true
 python -m src.main --live --device hw:0,0
 XINITRC_EOF
 

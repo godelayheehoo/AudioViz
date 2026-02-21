@@ -4,3 +4,4 @@ scipy
 pytest
 pyaudio
 sounddevice
+adafruit-circuitpython-si5351
