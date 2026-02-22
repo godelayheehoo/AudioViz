@@ -24,16 +24,15 @@ sleep 1
 
 # Start the visualizer
 cd ~/audio_viz
-source venv/bin/activate
 
-echo "activated venv"
+echo "Running clock setup with venv python..."
 
 # Start master clock generator first
-python rpi_setup/setup_clock.py || true
+venv/bin/python rpi_setup/setup_clock.py || true
 
 echo "setup clock, about to start display"
 
-python -m src.main --live --device plughw:0,0
+venv/bin/python -m src.main --live --device plughw:0,0
 XINITRC_EOF
 
 chmod +x ~/.xinitrc
