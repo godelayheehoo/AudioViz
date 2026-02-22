@@ -100,8 +100,9 @@ class LiveAudioSource(AudioSource):
             
             # Convert raw 32-bit integers to float32 (-1.0 to 1.0) if necessary
             if self.dtype == 'int32':
-                # Divide by max signed 32-bit integer value
-                data = data.astype(np.float32) / 2147483648.0
+                # Convert to float32 and multiply (multiplication is generally faster than division on ARM)
+                # 1.0 / 2147483648.0 = 4.656612873077393e-10
+                data = data.astype(np.float32) * 4.656612873077393e-10
             
             return data
             

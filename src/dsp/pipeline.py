@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.fft
 from ..config import SAMPLE_RATE, FFT_SIZE
 
 class DSPPipeline:
@@ -23,28 +24,28 @@ class DSPPipeline:
         """
         # Ensure we have enough data, pad if necessary
         if len(audio_chunk) < FFT_SIZE:
-             padding = np.zeros((FFT_SIZE - len(audio_chunk), audio_chunk.shape[1]))
+             padding = np.zeros((FFT_SIZE - len(audio_chunk), audio_chunk.shape[1]), dtype=np.float32)
              audio_chunk = np.concatenate((audio_chunk, padding))
         
-        # Process each channel
-        # Channel 0 (Left)
-        left_data = audio_chunk[:FFT_SIZE, 0] * self.window
-        left_fft = np.fft.rfft(left_data)
-        left_spectrum = np.abs(left_fft)
-        left_phase = np.angle(left_fft)
+        # Take exactly FFT_SIZE samples
+        data = audio_chunk[:FFT_SIZE, :]
         
-        # Channel 1 (Right)
-        if audio_chunk.shape[1] > 1:
-            right_data = audio_chunk[:FFT_SIZE, 1] * self.window
-            right_fft = np.fft.rfft(right_data)
-            right_spectrum = np.abs(right_fft)
-            right_phase = np.angle(right_fft)
-        else:
-            # Duplicate mono if only 1 channel
-            right_spectrum = left_spectrum
-            right_phase = left_phase
-
-        magnitude = np.vstack((left_spectrum, right_spectrum))
-        phase = np.vstack((left_phase, right_phase))
+        # Apply window to both channels simultaneously using broadcasting
+        # data: (FFT_SIZE, channels), window: (FFT_SIZE,) -> (FFT_SIZE, 1)
+        windowed_data = data * self.window[:, np.newaxis]
         
-        return magnitude, phase
+        # Perform real FFT along the time axis (axis=0) for all channels at once
+        # scipy.fft is generally faster than numpy.fft, especially when scipy uses BLAS/LAPACK backends
+        fft_result = scipy.fft.rfft(windowed_data, axis=0)
+        
+        # Calculate magnitude and phase
+        # Result shape: (bins, channels) -> transpose to (channels, bins) to match old API
+        spectrum = np.abs(fft_result).T
+        phase = np.angle(fft_result).T
+        
+        # Handle mono fallback just in case
+        if spectrum.shape[0] == 1:
+            spectrum = np.vstack((spectrum, spectrum))
+            phase = np.vstack((phase, phase))
+            
+        return spectrum, phase
