@@ -11,7 +11,7 @@ Your AudioViz project now supports **live audio input**! You can stream audio fr
 First, find out which audio devices are available:
 
 ```bash
-python src/main.py --list-devices
+python -m src.main --list-devices
 ```
 
 This will show all audio input devices with their IDs and capabilities.
@@ -21,7 +21,7 @@ This will show all audio input devices with their IDs and capabilities.
 Use your system's default microphone/input:
 
 ```bash
-python src/main.py --live
+python -m src.main --live
 ```
 
 ### Run with Specific Device
@@ -30,10 +30,10 @@ Use a specific audio device by ID or name:
 
 ```bash
 # By device ID (from --list-devices output)
-python src/main.py --live --device 0
+python -m src.main --live --device 0
 
 # By ALSA device name (on Raspberry Pi)
-python src/main.py --live --device hw:0,0
+python -m src.main --live --device hw:0,0
 ```
 
 ### Run with File (Original Behavior)
@@ -42,10 +42,10 @@ Play from a file (this is still the default):
 
 ```bash
 # Uses default example file
-python src/main.py
+python -m src.main
 
 # Use specific file
-python src/main.py --file path/to/your/audio.wav
+python -m src.main --file path/to/your/audio.wav
 ```
 
 ---
@@ -56,20 +56,26 @@ On your Pi with the PCM1808 ADC:
 
 1. **Check available devices:**
    ```bash
-   python src/main.py --list-devices
+   python -m src.main --list-devices
    ```
 
 2. **Find your PCM1808 device** - it will likely be:
    - Device ID `0` (if it's the only/primary input)
    - Or named something like `snd_rpi_googlevoicehat_soundcard`
 
-3. **Run with the PCM1808:**
+3. **Start the Master Clock Generator:**
+   *(The PCM1808 requires the Si5351A to provide its clock before it will send data)*
+   ```bash
+   python rpi_setup/setup_clock.py
+   ```
+
+4. **Run with the PCM1808:**
    ```bash
    # Try default first
-   python src/main.py --live
+   python -m src.main --live
    
    # Or specify explicitly
-   python src/main.py --live --device hw:0,0
+   python -m src.main --live --device hw:0,0
    ```
 
 ---
@@ -77,7 +83,7 @@ On your Pi with the PCM1808 ADC:
 ## Command-Line Reference
 
 ```
-python src/main.py [OPTIONS]
+python -m src.main [OPTIONS]
 
 Options:
   --live              Use live audio input instead of file playback
@@ -95,23 +101,23 @@ Options:
 
 ```bash
 # List devices
-python src/main.py --list-devices
+python -m src.main --list-devices
 
 # Use default mic
-python src/main.py --live
+python -m src.main --live
 
 # Use specific device (e.g., USB mic is device 2)
-python src/main.py --live --device 2
+python -m src.main --live --device 2
 ```
 
 ### Raspberry Pi with PCM1808
 
 ```bash
 # Standard ALSA device
-python src/main.py --live --device hw:0,0
+python -m src.main --live --device hw:0,0
 
 # Or by device ID (usually 0)
-python src/main.py --live --device 0
+python -m src.main --live --device 0
 ```
 
 ### Auto-start on Boot
@@ -149,8 +155,8 @@ python -c "import sounddevice as sd; print(sd.query_devices())"
 
 Use `--list-devices` to see all devices, then specify the correct one:
 ```bash
-python src/main.py --list-devices
-python src/main.py --live --device <correct_id>
+python -m src.main --list-devices
+python -m src.main --live --device <correct_id>
 ```
 
 ### Buffer Overflow Warnings

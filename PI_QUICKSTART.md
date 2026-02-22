@@ -58,6 +58,8 @@ The visualizer will now auto-start on boot and display on your monitor!
 ```bash
 cd ~/AudioViz
 source venv/bin/activate
+# Start master clock generator first!
+python rpi_setup/setup_clock.py
 python -m src.main --live --device hw:0,0
 ```
 
@@ -160,6 +162,9 @@ Test if hardware is capturing audio:
 ```bash
 # Stop the visualizer first
 pkill -f "python -m src.main"
+
+# Start master clock
+python rpi_setup/setup_clock.py
 
 # Record a test
 arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav

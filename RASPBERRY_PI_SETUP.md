@@ -61,7 +61,7 @@ To prevent clock drift between the Si5351A and the Raspberry Pi's internal clock
 | PCM1808 Pin | Function | Connection |
 |-------------|----------|------------|
 | MD0 | Master/Slave Select | **3.3V** |
-| MD1 | Master/Slave Select | **3.3V** |
+| MD1 | Master/Slave Select | **GND** |
 | FMT | Audio Format (I2S)  | **GND** |
 
 *(This configures the chip for Master Mode, 256fs, I2S Format)*
@@ -258,16 +258,6 @@ pcm.!default {
 ctl.!default {
     type hw
     card 0
-}
-
-pcm.capture {
-    type plug
-    slave {
-        pcm "hw:0,0"
-        rate 48000
-        channels 2
-        format S32_LE
-    }
 }
 ```
 

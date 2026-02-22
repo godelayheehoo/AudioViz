@@ -30,11 +30,11 @@ Real-time audio spectrum visualization system designed for Raspberry Pi deployme
 - ✓ File-based audio playback (WAV)
 - ✓ Automatic sample rate conversion
 
-**Pending:** Raspberry Pi deployment
-- ⏳ I2S ADC integration (PCM1808 or similar)
-- ⏳ ALSA audio input for live capture
-- ⏳ Framebuffer rendering optimization
-- ⏳ Hardware testing on Pi Zero 2 WH
+**Completed:** Raspberry Pi deployment
+- ✓ I2S ADC integration (PCM1808 with Si5351A)
+- ✓ ALSA audio input for live capture (hw:0,0)
+- ✓ Framebuffer rendering optimization
+- ✓ Hardware testing on Pi Zero 2 WH
 
 ## Installation
 
@@ -65,15 +65,15 @@ venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-### Raspberry Pi (Future)
+### Raspberry Pi
 
-> **Note:** Pi deployment is not yet implemented. The architecture is designed to support seamless transition via abstracted audio input layer.
+> **Note:** Pi deployment is fully supported with real-time I2S audio capture and X11/Framebuffer rendering.
 
-Planned hardware:
+Hardware requirements:
 - Raspberry Pi Zero 2 WH
 - PCM1808 I2S ADC (for line-level stereo input)
+- Si5351A Clock Generator module (essential for master clock generation)
 - Small HDMI display (480x800 or similar)
-- Optional: USB audio interface as alternative to I2S
 
 ## Usage
 
@@ -143,7 +143,7 @@ FPS = 60              # Target frame rate
 FULLSCREEN = False    # Set True for Pi deployment
 ```
 
-## Raspberry Pi Deployment (Planned)
+## Raspberry Pi Deployment
 
 ### Hardware Setup
 
@@ -226,12 +226,12 @@ pytest tests/
 - [x] Four visualization modes
 - [x] Touch UI system
 - [x] Adaptive normalization
-- [ ] I2S/ALSA audio input
-- [ ] Raspberry Pi optimization
-- [ ] Framebuffer rendering
-- [ ] Hardware testing
+- [x] I2S/ALSA audio input
+- [x] Raspberry Pi optimization
+- [x] Framebuffer rendering
+- [x] Hardware testing
 - [ ] Touchscreen calibration
-- [ ] Auto-start on boot
+- [x] Auto-start on boot
 
 ## Contributing
 
