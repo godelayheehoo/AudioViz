@@ -32,7 +32,7 @@ venv/bin/python rpi_setup/setup_clock.py >> /home/james/visualizer_log.txt 2>&1 
 
 echo "setup clock, about to start display"
 
-venv/bin/python -m src.main --live --device plughw:0,0 >> /home/james/visualizer_log.txt 2>&1
+venv/bin/python -m src.main --live --device hw:0,0 >> /home/james/visualizer_log.txt 2>&1
 XINITRC_EOF
 
 chmod +x ~/.xinitrc

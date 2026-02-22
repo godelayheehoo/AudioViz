@@ -33,7 +33,7 @@ Use a specific audio device by ID or name:
 python -m src.main --live --device 0
 
 # By ALSA device name (on Raspberry Pi)
-python -m src.main --live --device plughw:0,0
+python -m src.main --live --device hw:0,0
 ```
 
 ### Run with File (Original Behavior)
@@ -75,7 +75,7 @@ On your Pi with the PCM1808 ADC:
    python -m src.main --live
    
    # Or specify explicitly
-   python -m src.main --live --device plughw:0,0
+   python -m src.main --live --device hw:0,0
    ```
 
 ---
@@ -87,7 +87,7 @@ python -m src.main [OPTIONS]
 
 Options:
   --live              Use live audio input instead of file playback
-  --device DEVICE     Audio input device (ID number or name like 'plughw:0,0')
+  --device DEVICE     Audio input device (ID number or name like 'hw:0,0')
   --file PATH         Path to audio file for playback (default mode)
   --list-devices      Show all available audio input devices and exit
   -h, --help          Show help message
@@ -114,7 +114,7 @@ python -m src.main --live --device 2
 
 ```bash
 # Standard ALSA device
-python -m src.main --live --device plughw:0,0
+python -m src.main --live --device hw:0,0
 
 # Or by device ID (usually 0)
 python -m src.main --live --device 0
@@ -126,7 +126,7 @@ Update your systemd service to use live audio:
 
 ```ini
 [Service]
-ExecStart=/home/pi/audio_viz/venv/bin/python /home/pi/audio_viz/src/main.py --live --device plughw:0,0
+ExecStart=/home/pi/audio_viz/venv/bin/python /home/pi/audio_viz/src/main.py --live --device hw:0,0
 ```
 
 ---

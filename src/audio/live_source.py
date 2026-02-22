@@ -22,6 +22,7 @@ class LiveAudioSource(AudioSource):
         self.device = device
         self.channels = channels
         self.stream = None
+        self.dtype = 'float32'
         self.buffer = np.zeros((CHUNK_SIZE, channels), dtype=np.float32)
         
     def start(self):
@@ -38,14 +39,31 @@ class LiveAudioSource(AudioSource):
                 device_info = sd.query_devices(self.device, 'input')
                 print(f"  Device info: {device_info['name']}")
             
-            # Open the audio stream
-            self.stream = sd.InputStream(
-                device=self.device,
-                channels=self.channels,
-                samplerate=SAMPLE_RATE,
-                blocksize=CHUNK_SIZE,
-                dtype='float32'
-            )
+            # Attempt to open the float32 stream (standard microphones)
+            try:
+                self.stream = sd.InputStream(
+                    device=self.device,
+                    channels=self.channels,
+                    samplerate=SAMPLE_RATE,
+                    blocksize=CHUNK_SIZE,
+                    dtype='float32'
+                )
+                self.dtype = 'float32'
+                print("  Format: float32 (Native)")
+            except Exception as e:
+                # Fallback: Many pure ALSA hardware devices (like PCM1808 via I2S) 
+                # strictly enforce 32-bit integer data and refuse float32 requests.
+                print("  Failed to open float32 stream, attempting 32-bit integer fallback...")
+                self.stream = sd.InputStream(
+                    device=self.device,
+                    channels=self.channels,
+                    samplerate=SAMPLE_RATE,
+                    blocksize=CHUNK_SIZE,
+                    dtype='int32'
+                )
+                self.dtype = 'int32'
+                print("  Format: int32 (Will be converted to float32 internally)")
+                
             self.stream.start()
             print("Live audio stream started successfully!")
             
@@ -79,6 +97,11 @@ class LiveAudioSource(AudioSource):
             
             if overflowed:
                 print("Warning: Audio buffer overflow detected!")
+            
+            # Convert raw 32-bit integers to float32 (-1.0 to 1.0) if necessary
+            if self.dtype == 'int32':
+                # Divide by max signed 32-bit integer value
+                data = data.astype(np.float32) / 2147483648.0
             
             return data
             

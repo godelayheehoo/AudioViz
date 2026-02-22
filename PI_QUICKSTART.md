@@ -60,7 +60,7 @@ cd ~/AudioViz
 source venv/bin/activate
 # Start master clock generator first!
 python rpi_setup/setup_clock.py
-python -m src.main --live --device plughw:0,0
+python -m src.main --live --device hw:0,0
 ```
 
 ### Option 3: File Playback (Not Recommended on Pi Zero 2)
@@ -119,7 +119,7 @@ python -m src.main --list-devices
 python -m src.main --live
 
 # Use specific audio device
-python -m src.main --live --device plughw:0,0
+python -m src.main --live --device hw:0,0
 
 # Use file playback (small files only!)
 python -m src.main --file path/to/audio.wav
@@ -167,7 +167,7 @@ pkill -f "python -m src.main"
 python rpi_setup/setup_clock.py
 
 # Record a test
-arecord -D plughw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
+arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
 
 # Copy to your computer and play it
 scp james@raspberrypi.local:~/test.wav .
@@ -188,7 +188,7 @@ The visualizer is already running (this is normal after auto-start):
 pkill -f "python -m src.main"
 
 # Then run your command
-arecord -D plughw:0,0 -f S32_LE -r 48000 -c 2 -d 2 test.wav
+arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 2 test.wav
 ```
 
 ### Display Not Showing
