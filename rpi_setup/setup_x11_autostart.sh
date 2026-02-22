@@ -33,7 +33,7 @@ python rpi_setup/setup_clock.py || true
 
 echo "setup clock, about to start display"
 
-python -m src.main --live --device hw:0,0
+python -m src.main --live --device plughw:0,0
 XINITRC_EOF
 
 chmod +x ~/.xinitrc
