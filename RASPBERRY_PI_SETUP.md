@@ -52,8 +52,19 @@ Connect the PCM1808 to your Pi's GPIO header as follows:
 | DATA/DOUT/OUT | Data Out | Pi GPIO 20 (Pin 38) |
 | VDD / 3.3   | Power (3.3V) | Pi 3.3V |
 | GND         | Ground | Pi GND |
+| 5V / VCC    | Analog Power | **Pi 5V (Pin 2 or 4)** (Required!) |
 
-> **Note:** Some PCM1808 modules have additional pins (FMY, MDI, MDO, +5V) for format/mode configuration. For basic I2S operation, you typically only need to connect the pins listed above. Leave FMY, MDI, and MDO unconnected unless your specific module documentation requires otherwise.
+### PCM1808 Format Pins (Master Mode)
+
+To prevent clock drift between the Si5351A and the Raspberry Pi's internal clocks, the PCM1808 **must** act as the I2S Master. Connect the format pins on the breakout board as follows:
+
+| PCM1808 Pin | Function | Connection |
+|-------------|----------|------------|
+| MD0 | Master/Slave Select | **3.3V** |
+| MD1 | Master/Slave Select | **3.3V** |
+| FMT | Audio Format (I2S)  | **GND** |
+
+*(This configures the chip for Master Mode, 256fs, I2S Format)*
 
 ### Audio Input Connections
 
@@ -118,12 +129,13 @@ dtparam=i2s=on
 # Disable onboard audio (conflicts with I2S)
 dtparam=audio=off
 
-# PCM1808 I2S ADC
+# PCM1808 I2S ADC (Custom Overlay for Slave Mode)
 dtoverlay=i2s-mmap
-dtoverlay=googlevoicehat-soundcard
+# We will compile the 'pcm1808' overlay in the next step
+dtoverlay=pcm1808
 ```
 
-> **Note:** The `googlevoicehat-soundcard` overlay configures the Pi to expect 48kHz audio. The external Si5351A provides the necessary 12.288 MHz master clock to the PCM1808 to make this work.
+> **Note:** We must use a custom overlay instead of the standard `googlevoicehat` overlay because the Pi must act as the I2S Slave to avoid clock drift.
 
 Reboot:
 ```bash
@@ -132,30 +144,21 @@ sudo reboot
 
 ---
 
-## I2S Configuration
+## I2S Configuration (Custom Device Tree Overlay)
 
-### 1. Verify I2S Device
+Because the Si5351A Master Clock generator runs on a different physical crystal than the Raspberry Pi, the two devices will slowly drift out of sync. If the Pi generates the BCK/LRCK, the PCM1808 will detect this drift and infinitely mute its output (resulting in silence/empty `ff ff ff ff` captures).
 
-After reboot, check if the I2S device is detected:
-```bash
-arecord -l
-```
+To solve this, the PCM1808 is wired as the Hardware Master. We must configure the Pi to act as a Software Slave using a custom Device Tree Overlay.
 
-You should see something like:
-```
-card 0: sndrpigooglevoi [snd_rpi_googlevoicehat_soundcard]
-  Subdevice #0: subdevice #0
-```
+### 1. Create the Custom Overlay
 
-### 2. Alternative: Custom Device Tree Overlay (if needed)
-
-If the Google Voice HAT overlay doesn't work, create a custom one:
+This overlay uses the `linux,spdif-dir` generic codec built into the kernel, which forces the Pi to act as a generic I2S "slave" capture device without needing the missing, specific PCM1808 driver perfectly compiled. 
 
 ```bash
 sudo nano /boot/overlays/pcm1808-overlay.dts
 ```
 
-Add this content:
+Add this content exactly:
 ```dts
 /dts-v1/;
 /plugin/;
@@ -175,46 +178,57 @@ Add this content:
         __overlay__ {
             pcm1808_codec: pcm1808-codec {
                 #sound-dai-cells = <0>;
-                compatible = "ti,pcm1808";
+                compatible = "linux,spdif-dir";
                 status = "okay";
             };
         };
     };
 
     fragment@2 {
-        target = <&sound>;
+        target-path = "/";
         __overlay__ {
-            compatible = "simple-audio-card";
-            simple-audio-card,name = "pcm1808";
-            status = "okay";
+            sound_pcm1808 {
+                compatible = "simple-audio-card";
+                simple-audio-card,name = "pcm1808";
+                status = "okay";
 
-            simple-audio-card,format = "i2s";
-            simple-audio-card,bitclock-master = <&dailink0_slave>;
-            simple-audio-card,frame-master = <&dailink0_slave>;
+                simple-audio-card,format = "i2s";
+                simple-audio-card,bitclock-master = <&dailink0_slave>;
+                simple-audio-card,frame-master = <&dailink0_slave>;
 
-            simple-audio-card,cpu {
-                sound-dai = <&i2s>;
-            };
+                simple-audio-card,cpu {
+                    sound-dai = <&i2s>;
+                };
 
-            dailink0_slave: simple-audio-card,codec {
-                sound-dai = <&pcm1808_codec>;
+                dailink0_slave: simple-audio-card,codec {
+                    sound-dai = <&pcm1808_codec>;
+                };
             };
         };
     };
 };
 ```
 
-Compile and use it:
+### 2. Compile and Install
 ```bash
 sudo dtc -@ -I dts -O dtb -o /boot/overlays/pcm1808.dtbo /boot/overlays/pcm1808-overlay.dts
 ```
 
-Then update `/boot/firmware/config.txt`:
-```ini
-dtoverlay=pcm1808
+*(You already added `dtoverlay=pcm1808` to `/boot/firmware/config.txt` in Step 3b).*
+
+Reboot the Pi:
+```bash
+sudo reboot
 ```
 
-Reboot again.
+### 2. Verify I2S Device
+
+After reboot, check if the I2S device is detected:
+```bash
+arecord -l
+```
+
+You should see the `pcm1808` device listed as a capture hardware device.
 
 ---
 
@@ -346,7 +360,7 @@ python rpi_setup/setup_clock.py
 ### 2. Test Audio Capture (ALSA)
 Record a 5-second test from the hardware directly:
 ```bash
-arecord -D hw:1,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
+arecord -D hw:0,0 -f S32_LE -r 48000 -c 2 -d 5 test.wav
 ```
 
 > **Note:** The PCM1808 on Raspberry Pi uses S32_LE format (24-bit audio in 32-bit containers), not S24_LE.
