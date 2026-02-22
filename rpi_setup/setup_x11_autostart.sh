@@ -28,11 +28,11 @@ cd ~/audio_viz
 echo "Running clock setup with venv python..."
 
 # Start master clock generator first
-venv/bin/python rpi_setup/setup_clock.py || true
+venv/bin/python rpi_setup/setup_clock.py >> /home/james/visualizer_log.txt 2>&1 || true
 
 echo "setup clock, about to start display"
 
-venv/bin/python -m src.main --live --device plughw:0,0
+venv/bin/python -m src.main --live --device plughw:0,0 >> /home/james/visualizer_log.txt 2>&1
 XINITRC_EOF
 
 chmod +x ~/.xinitrc
