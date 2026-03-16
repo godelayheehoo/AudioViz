@@ -108,7 +108,7 @@ class PyGameRenderer(Renderer):
         self.mode = 'bars'  # Computed from base_mode + sub_mode for backward compatibility
         
         # Dropdown menu for mode selection (consolidated)
-        dropdown_options = ["Spectrum", "Radial", "Spectrogram", "Oscilloscope", "Phase Clock", "Particle Field", "Spectral Terrain"]
+        dropdown_options = ["Spectrum", "Radial", "Spectrogram", "Oscilloscope", "Phase Clock", "Particle Field", "Spectral Terrain", "Eyes"]
         self.mode_map = {
             "Spectrum": "spectrum",
             "Radial": "radial",
@@ -116,7 +116,8 @@ class PyGameRenderer(Renderer):
             "Oscilloscope": "wave",
             "Phase Clock": "phase_clock",
             "Particle Field": "particles",
-            "Spectral Terrain": "terrain"
+            "Spectral Terrain": "terrain",
+            "Eyes": "eyes"
         }
         dropdown_width = 200
         dropdown_height = 40
@@ -177,6 +178,13 @@ class PyGameRenderer(Renderer):
         self.terrain_history_left = deque(maxlen=TERRAIN_HISTORY_DEPTH)
         self.terrain_history_right = deque(maxlen=TERRAIN_HISTORY_DEPTH)
         self.terrain_num_bins = TERRAIN_NUM_BINS
+        
+        # Eyes visualizer setup
+        # Precompute log-spaced bins for the available eyes (approx 44 for now)
+        self.num_eyes = 44  # based on grid size we will draw
+        self.eyes_blink_timers = np.zeros(self.num_eyes, dtype=np.float32)
+        self.eyes_is_closed = np.zeros(self.num_eyes, dtype=bool)
+        self.eyes_trigger_thresholds = np.ones(self.num_eyes, dtype=np.float32) * 0.5
         
         # Single circular toggle button for mode variants (bars vs curves)
         toggle_x = WINDOW_WIDTH - 35  # Center x position (bottom right)
@@ -268,7 +276,8 @@ class PyGameRenderer(Renderer):
             ('spectrogram', None),
             ('phase_clock', None),
             ('particles', None),
-            ('terrain', None)
+            ('terrain', None),
+            ('eyes', None)
         ]
         
         # Pick a random mode
@@ -287,7 +296,8 @@ class PyGameRenderer(Renderer):
             'wave': 'Oscilloscope',
             'phase_clock': 'Phase Clock',
             'particles': 'Particle Field',
-            'terrain': 'Spectral Terrain'
+            'terrain': 'Spectral Terrain',
+            'eyes': 'Eyes'
         }
         
         dropdown_option = mode_to_dropdown.get(self.base_mode)
@@ -484,6 +494,8 @@ class PyGameRenderer(Renderer):
             self._render_particle_field(spectrum)
         elif self.mode == 'terrain':
             self._render_spectral_terrain(spectrum)
+        elif self.mode == 'eyes':
+            self._render_eyes(spectrum)
             
         # Draw dropdowns
         self.scale_dropdown.draw(self.screen)
@@ -1044,6 +1056,135 @@ class PyGameRenderer(Renderer):
         # Draw center separator line
         pygame.draw.line(self.screen, (50, 50, 50), (half_width, 0), (half_width, WINDOW_HEIGHT), 1)
 
+    def _render_eyes(self, spectrum):
+        """
+        Renders a tightly packed grid of abstract eyes.
+        Left channel is cyan, right channel is magenta.
+        Each eye maps to a log-spaced frequency bin.
+        Eyes blink when the bin's amplitude crosses an adaptive threshold.
+        """
+        num_channels = spectrum.shape[0]
+        num_bins = spectrum.shape[1]
+        
+        # Grid layout parameters
+        cols = 8
+        rows = int(np.ceil(self.num_eyes / cols))
+        
+        # Available drawing area
+        margin_x = 50
+        margin_y = 50
+        draw_width = WINDOW_WIDTH - 2 * margin_x
+        draw_height = WINDOW_HEIGHT - 2 * margin_y
+        
+        # Dimension of a single eye cell
+        cell_w = draw_width / cols
+        cell_h = draw_height / rows
+        
+        # Eye internal drawing parameters
+        eye_width = cell_w * 0.95
+        eye_height = cell_h * 0.8
+        pupil_radius = min(eye_width, eye_height) * 0.25
+        
+        # Adaptive thresholds: slowly decay thresholds
+        self.eyes_trigger_thresholds *= 0.98
+        
+        # Log-spaced bin indices for the eyes. We want to cover mostly low to mid-high frequencies.
+        # Since spectrum size is typically 1024 (for chunk=1024, fft=2048), limit to useful range ~500 bins
+        limit = min(500, num_bins)
+        # Avoid the very first DC-like bin, start from 1
+        bin_indices = np.logspace(np.log10(1), np.log10(limit-1), self.num_eyes, dtype=int)
+        
+        dt = 1/FPS  # Assuming 60fps
+        
+        # Draw eyes
+        for i in range(self.num_eyes):
+            col = i % cols
+            row = i // cols
+            
+            # Staggered layout for tighter packing
+            offset_x = (cell_w / 2) if (row % 2 != 0) else 0
+            
+            center_x = margin_x + col * cell_w + (cell_w / 2) + offset_x
+            
+            # If staggering pushes the last element of the row out of bounds, compress it or skip
+            if center_x > WINDOW_WIDTH - margin_x:
+                # Wrap it around or just nudge it. Let's nudge it back slightly for the stagger effect without breaking bounds
+                center_x -= cell_w
+            
+            center_y = margin_y + row * cell_h + (cell_h / 2)
+            
+            # Alternate channels based on index
+            # Cyan for left (ch=0), Magenta for right (ch=1)
+            ch = i % 2 
+            color = (0, 255, 255) if ch == 0 else (255, 0, 255)
+            
+            # Get amplitude for this eye's frequency bin
+            bin_idx = bin_indices[i]
+            amplitude = spectrum[ch][bin_idx] if bin_idx < num_bins else 0
+            
+            # Update threshold tracking
+            if amplitude > self.eyes_trigger_thresholds[i]:
+                 self.eyes_trigger_thresholds[i] = amplitude
+                 
+            # Blink logic
+            # Trigger blink if amplitude is near the current moving threshold, AND the threshold is above a noise floor
+            is_loud = amplitude > (self.eyes_trigger_thresholds[i] * 0.7) and amplitude > 0.1
+            
+            if is_loud:
+                # Stay closed or start closing
+                self.eyes_is_closed[i] = True
+                self.eyes_blink_timers[i] = 0.15 # Eye stays closed for at least 150ms after loud sound
+            else:
+                if self.eyes_blink_timers[i] > 0:
+                    self.eyes_blink_timers[i] -= dt
+                else:
+                    self.eyes_is_closed[i] = False
+                    
+            # Draw the eye
+            # A simple abstract eye: two arcs (top and bottom) and a filled pupil
+            
+            left_pt = (center_x - eye_width/2, center_y)
+            right_pt = (center_x + eye_width/2, center_y)
+            
+            if self.eyes_is_closed[i]:
+                # Closed eye: just draw a horizontal line (or slightly curved down line)
+                pygame.draw.line(self.screen, color, left_pt, right_pt, 3)
+            else:
+                # Open eye
+                top_pt = (center_x, center_y - eye_height/2)
+                bottom_pt = (center_x, center_y + eye_height/2)
+                
+                # Draw top lid (curve from left to right passing through top)
+                # Since pygame doesn't have an easy arc function that goes through 3 points intuitively, 
+                # we'll approximate with lines or a bezier curve.
+                points_top = []
+                points_bottom = []
+                num_segments = 10
+                for t in np.linspace(0, 1, num_segments):
+                    # Quadratic bezier using left, top/bottom, right as control points
+                    x_top = (1-t)**2 * left_pt[0] + 2*(1-t)*t * top_pt[0] + t**2 * right_pt[0]
+                    y_top = (1-t)**2 * left_pt[1] + 2*(1-t)*t * top_pt[1] + t**2 * right_pt[1]
+                    points_top.append((int(x_top), int(y_top)))
+                    
+                    x_bot = (1-t)**2 * left_pt[0] + 2*(1-t)*t * bottom_pt[0] + t**2 * right_pt[0]
+                    y_bot = (1-t)**2 * left_pt[1] + 2*(1-t)*t * bottom_pt[1] + t**2 * right_pt[1]
+                    points_bottom.append((int(x_bot), int(y_bot)))
+                    
+                pygame.draw.lines(self.screen, color, False, points_top, 3)
+                pygame.draw.lines(self.screen, color, False, points_bottom, 3)
+                
+                # Draw pupil
+                # Pupil could pulse with the amplitude, bounded by eye height
+                current_pupil_radius = min(pupil_radius + amplitude * 10, eye_height/2 - 2)
+                pygame.draw.circle(self.screen, color, (int(center_x), int(center_y)), int(current_pupil_radius))
+                
+                # Small white highlight in the pupil
+                highlight_offset = current_pupil_radius * 0.3
+                pygame.draw.circle(self.screen, (255, 255, 255), 
+                                 (int(center_x - highlight_offset), int(center_y - highlight_offset)), 
+                                 max(1, int(current_pupil_radius * 0.2)))
+
+
     def _render_waveform(self, audio_chunk):
         # audio_chunk shape (CHUNK_SIZE, 2)
         # We need to stabilize the waveform using a simple zero-crossing trigger on the Left channel
@@ -1234,7 +1375,8 @@ class PyGameRenderer(Renderer):
                         ('spectrogram', None),
                         ('phase_clock', None),
                         ('particles', None),
-                        ('terrain', None)
+                        ('terrain', None),
+                        ('eyes', None)
                     ]
                     
                     # Find current mode in list
