@@ -41,6 +41,7 @@ DEFAULTS = {
     'terrain': {
         'history_depth': 40,
         'num_bins': 60,
+        'vertical_line_step': 3,
     },
 }
 
@@ -99,4 +100,5 @@ MAX_PARTICLES = config['particles']['max_count']
 # Terrain Settings
 TERRAIN_HISTORY_DEPTH = config['terrain']['history_depth']
 TERRAIN_NUM_BINS = config['terrain']['num_bins']
+TERRAIN_VERTICAL_LINE_STEP = config['terrain']['vertical_line_step']
 

@@ -9,7 +9,8 @@ from ..config import (
     SMOOTHING_FACTOR, MAX_DECAY, WAVEFORM_INITIAL_MAX,
     SILENCE_THRESHOLD, SHUFFLE_ENABLED_DEFAULT,
     MAX_HISTORY_CYCLES, SPECTROGRAM_HISTORY_LENGTH,
-    MAX_PARTICLES, TERRAIN_HISTORY_DEPTH, TERRAIN_NUM_BINS
+    MAX_PARTICLES, TERRAIN_HISTORY_DEPTH, TERRAIN_NUM_BINS,
+    TERRAIN_VERTICAL_LINE_STEP
 )
 import random
 from collections import deque
@@ -1034,7 +1035,7 @@ class PyGameRenderer(Renderer):
             
             # Draw vertical lines (connecting same frequency across time/depth)
             # Draw fewer vertical lines for performance
-            for x_idx in range(0, self.terrain_num_bins, 3):  # Every 3rd bin
+            for x_idx in range(0, self.terrain_num_bins, TERRAIN_VERTICAL_LINE_STEP):  # Every Nth bin
                 points = []
                 for z_idx in range(depth):
                     z = z_idx * z_scale

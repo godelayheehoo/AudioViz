@@ -84,10 +84,18 @@ max_count = 400
 
 [terrain]
 # Number of FFT frames to keep for 3D terrain visualization depth
+# Lower = better performance on slow hardware (e.g., 20 for Pi Zero)
 # Used by: src/render/pygame_render.py (terrain history deques)
-history_depth = 40
+# history_depth = 40
+history_depth = 20
 
 # Number of frequency bins to display in terrain
-# Lower = better performance, less detail
+# Lower = better performance, less detail (e.g., 30 for Pi Zero)
 # Used by: src/render/pygame_render.py (terrain rendering)
-num_bins = 60
+# num_bins = 60
+num_bins = 30
+
+# Draw a vertical depth-line every Nth frequency bin
+# Higher = fewer vertical lines = better performance (e.g., 5 or 6 for Pi Zero)
+# Used by: src/render/pygame_render.py (_render_spectral_terrain)
+vertical_line_step = 5
